@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  This file is part of AndroidIDE.
+
+  AndroidIDE is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  AndroidIDE is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+-->
+<resources>
+    <string name="local_history_action">Local History</string>
+    <string name="local_history_dialog_title">Local History</string>
+    <string name="local_history_section_snapshots">Snapshots</string>
+    <string name="local_history_section_diff">Changes vs current file</string>
+    <string name="local_history_empty">No snapshots yet.\n\nSnapshots are taken automatically a few seconds after you edit and save this file.</string>
+    <string name="local_history_restore">Restore</string>
+    <string name="local_history_close">Close</string>
+    <string name="local_history_select_snapshot">Select a snapshot first</string>
+    <string name="local_history_restore_confirm_title">Restore snapshot?</string>
+    <string name="local_history_restore_confirm">Restore the version from %1$s?\n\nThe current content will be kept as a new snapshot, so you can undo this restore.</string>
+    <string name="local_history_restored">Snapshot restored</string>
+    <string name="local_history_restore_failed">Could not restore snapshot</string>
+    <string name="local_history_diff_identical">Identical to the current file.</string>
+    <string name="local_history_diff_unavailable">Diff unavailable (binary or unreadable content).</string>
+    <string name="local_history_snapshot_size">%1$s</string>
+</resources>

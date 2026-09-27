@@ -48,6 +48,7 @@ import dev.mutwakil.androidide.events.AppEventsIndex
 import dev.mutwakil.androidide.events.EditorEventsIndex
 import dev.mutwakil.androidide.events.LspApiEventsIndex
 import dev.mutwakil.androidide.events.LspJavaEventsIndex
+import dev.mutwakil.androidide.localhistory.LocalHistoryService
 import dev.mutwakil.androidide.preferences.internal.DevOpsPreferences
 import dev.mutwakil.androidide.preferences.internal.GeneralPreferences
 import dev.mutwakil.androidide.preferences.internal.StatPreferences
@@ -132,6 +133,11 @@ class IDEApplication : TermuxApplication() {
       .installDefaultEventBus(true)
 
     EventBus.getDefault().register(this)
+
+    // v3/history: Local History — snapshots automáticos dos arquivos do projeto.
+    // Falha aqui nunca pode impedir o app de iniciar.
+    runCatching { LocalHistoryService.attach(this) }
+      .onFailure { log.error("LocalHistory: attach failed", it) }
 
     CoroutineScope(Dispatchers.Main).launch {
       withContext(Dispatchers.Main) {
