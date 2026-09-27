@@ -88,6 +88,23 @@
       android:exported="false"
       android:theme="@style/Theme.AndroidIDE" />
 
+    <!-- v3: novas ferramentas -->
+    <activity
+      android:name=".assetstudio.AssetStudioActivity"
+      android:exported="false"
+      android:theme="@style/Theme.AndroidIDE" />
+
+    <activity
+      android:name=".apkanalyzer.ApkAnalyzerActivity"
+      android:exported="false"
+      android:theme="@style/Theme.AndroidIDE" />
+
+    <activity
+      android:name=".dbinspector.DbInspectorActivity"
+      android:exported="false"
+      android:configChanges="orientation|screenSize"
+      android:theme="@style/Theme.AndroidIDE" />
+
     <activity
       android:name=".activities.FolderPickerActivity"
       android:exported="false"

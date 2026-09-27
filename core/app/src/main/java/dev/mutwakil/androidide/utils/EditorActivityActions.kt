@@ -49,6 +49,10 @@ import dev.mutwakil.androidide.actions.filetree.OpenWithAction
 import dev.mutwakil.androidide.actions.filetree.RenameAction
 import dev.mutwakil.androidide.actions.text.RedoAction
 import dev.mutwakil.androidide.actions.text.UndoAction
+import dev.mutwakil.androidide.apkanalyzer.ApkAnalyzerAction
+import dev.mutwakil.androidide.assetstudio.AssetStudioAction
+import dev.mutwakil.androidide.dbinspector.DbInspectorAction
+import dev.mutwakil.androidide.localhistory.LocalHistoryAction
 
 /**
  * Takes care of registering actions to the actions registry for the editor activity.
@@ -78,6 +82,9 @@ class EditorActivityActions {
       registry.registerAction(DisconnectLogSendersAction(context, order++))
       registry.registerAction(LaunchAppAction(context, order++))
       registry.registerAction(AiChatAction(context, order++))
+      registry.registerAction(DbInspectorAction(context, order++))
+      registry.registerAction(AssetStudioAction(context, order++))
+      registry.registerAction(ApkAnalyzerAction(context, order++))
 
       // editor text actions
       registry.registerAction(ExpandSelectionAction(context, order++))
@@ -95,6 +102,7 @@ class EditorActivityActions {
 
       // file tree actions
       registry.registerAction(CopyPathAction(context, order++))
+      registry.registerAction(LocalHistoryAction(context, order++))
       registry.registerAction(DeleteAction(context, order++))
       registry.registerAction(NewFileAction(context, order++))
       registry.registerAction(NewFolderAction(context, order++))
