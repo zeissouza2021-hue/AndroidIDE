@@ -19,6 +19,7 @@ package dev.mutwakil.androidide.aiagent.store
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
@@ -31,9 +32,15 @@ import dev.mutwakil.androidide.aiagent.model.ProviderConfig
  * Storage layout:
  * - API keys go to an [EncryptedSharedPreferences] file (`aiagent_secrets`),
  *   encrypted with a [MasterKey] (AES256-GCM).
- * - Everything else (provider id, display name, endpoint, model, extra headers
- *   as JSON, the set of configured ids and the active provider id) lives in a
- *   regular [SharedPreferences] file (`aiagent_prefs`).
+ * - Extra headers also go to the encrypted file: they frequently carry
+ *   credentials (`Authorization`, `x-api-key`, ...).
+ * - Everything else (provider id, display name, endpoint, model, the set of
+ *   configured ids and the active provider id) lives in a regular
+ *   [SharedPreferences] file (`aiagent_prefs`).
+ *
+ * Legacy note: versions before this change stored `extraHeaders` in the
+ * plain prefs file; reads fall back to that key so existing configs are
+ * not lost, and the plaintext copy is removed on the next save.
  *
  * Per-provider keys are namespaced as `provider.<id>.<field>`.
  */
@@ -45,17 +52,28 @@ class ProviderConfigStore(context: Context) {
     private val secrets: SharedPreferences =
         createEncryptedPrefs(context.applicationContext)
 
+    /**
+     * Cria o prefs criptografado. Se o keystore falhar (ex.: corrompido ou
+     * bloqueado no aparelho), cai para um prefs comum em vez de estourar o
+     * construtor — degradado, mas o app continua abrindo. No caminho normal
+     * (keystore íntegro) o comportamento é idêntico ao anterior.
+     */
     private fun createEncryptedPrefs(context: Context): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            ENCRYPTED_PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+        return try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                ENCRYPTED_PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Keystore indisponível; usando prefs sem criptografia", e)
+            context.getSharedPreferences(ENCRYPTED_PREFS_NAME + "_fallback", Context.MODE_PRIVATE)
+        }
     }
 
     private fun prefix(id: String) = "provider.$id."
@@ -67,7 +85,8 @@ class ProviderConfigStore(context: Context) {
             .putString(p + "displayName", config.displayName)
             .putString(p + "endpoint", config.endpoint)
             .putString(p + "model", config.model)
-            .putString(p + "extraHeaders", gson.toJson(config.extraHeaders))
+            // Remove a cópia legada em texto puro (agora vai para o prefs criptografado).
+            .remove(p + "extraHeaders")
             .putStringSet(KEY_PROVIDER_IDS, (listConfiguredIds() + config.providerId).toMutableSet())
             .apply()
         secrets.edit().let { editor ->
@@ -75,6 +94,12 @@ class ProviderConfigStore(context: Context) {
                 editor.remove(p + "apiKey")
             } else {
                 editor.putString(p + "apiKey", config.apiKey)
+            }
+            // Headers extras podem carregar credenciais: nunca em texto puro.
+            if (config.extraHeaders.isEmpty()) {
+                editor.remove(p + "extraHeaders")
+            } else {
+                editor.putString(p + "extraHeaders", gson.toJson(config.extraHeaders))
             }
             editor.apply()
         }
@@ -90,7 +115,11 @@ class ProviderConfigStore(context: Context) {
             apiKey = secrets.getString(p + "apiKey", null),
             endpoint = prefs.getString(p + "endpoint", null),
             model = prefs.getString(p + "model", "") ?: "",
-            extraHeaders = readExtraHeaders(prefs.getString(p + "extraHeaders", null)),
+            // Fallback para a chave legada em texto puro (versões antigas).
+            extraHeaders = readExtraHeaders(
+                secrets.getString(p + "extraHeaders", null)
+                    ?: prefs.getString(p + "extraHeaders", null)
+            ),
         )
     }
 
@@ -105,10 +134,10 @@ class ProviderConfigStore(context: Context) {
             .remove(p + "displayName")
             .remove(p + "endpoint")
             .remove(p + "model")
-            .remove(p + "extraHeaders")
+            .remove(p + "extraHeaders") // cópia legada em texto puro
             .putStringSet(KEY_PROVIDER_IDS, (listConfiguredIds() - id).toMutableSet())
             .apply()
-        secrets.edit().remove(p + "apiKey").apply()
+        secrets.edit().remove(p + "apiKey").remove(p + "extraHeaders").apply()
         if (getActiveProviderId() == id) setActiveProviderId(null)
     }
 
@@ -137,6 +166,7 @@ class ProviderConfigStore(context: Context) {
     }
 
     companion object {
+        private const val TAG = "ProviderConfigStore"
         private const val PREFS_NAME = "aiagent_prefs"
         private const val ENCRYPTED_PREFS_NAME = "aiagent_secrets"
         private const val KEY_PROVIDER_IDS = "provider_ids"

@@ -295,7 +295,9 @@ private fun KaSession.collectMemberCompletions(to: MutableList<CompletionItem>) 
 
 	collectMembersFromType(receiverType, to)
 
-	if (qualifiedExpr is KtSafeQualifiedExpression) {
+	if (qualifiedExpr is KtSafeQualifiedExpression && receiverType.isMarkedNullable) {
+		// Com receiver já não-nulo, a segunda coleta abaixo repetiria os
+		// mesmos membros (itens duplicados na lista).
 		val nonNullType = receiverType.withNullability(isMarkedNullable = false)
 		collectMembersFromType(nonNullType, to)
 	}
@@ -359,7 +361,13 @@ private fun KaSession.collectExtensionFunctions(
 context(env: CompilationEnvironment, ctx: AnalysisContext)
 private fun KaSession.collectScopeCompletions(to: MutableList<CompletionItem>) {
 	if (ctx.partial.isBlank()) {
-		logger.warn("cannot complete for blank partial candidate")
+		// Sem prefixo (ex.: invoke manual): ainda oferece keywords e
+		// snippets, que são baratos de computar. A coleta de símbolos do
+		// escopo e dos índices é pulada — com prefixo vazio ela traria
+		// milhares de candidatos sem filtro útil.
+		logger.debug("completing with blank partial: keywords and snippets only")
+		collectSnippetCompletions(to)
+		collectKeywordCompletions(to)
 		return
 	}
 

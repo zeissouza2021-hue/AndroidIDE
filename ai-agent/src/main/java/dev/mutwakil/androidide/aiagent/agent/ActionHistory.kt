@@ -105,6 +105,7 @@ class ActionHistory(
 
     init {
         loadPersisted()
+        pruneSnapshots()
     }
 
     // ------------------------------------------------------------------
@@ -210,6 +211,7 @@ class ActionHistory(
             val snapshot = builder.finish()
             if (snapshot.entries.isNotEmpty()) {
                 snapshots.add(snapshot)
+                pruneSnapshots()
                 persistSnapshotsMeta()
             } else {
                 // Snapshot vazio: descarta o zip.
@@ -217,6 +219,22 @@ class ActionHistory(
             }
         } catch (_: Exception) {
             // best-effort
+        }
+    }
+
+    /**
+     * Poda os snapshots mais antigos além de [MAX_SNAPSHOTS], deletando os
+     * zips do disco. Só [latestSnapshot] é consumido (por `undo_changes`),
+     * então o comportamento observável não muda — só o teto de disco/memória.
+     */
+    private fun pruneSnapshots() {
+        while (snapshots.size > MAX_SNAPSHOTS) {
+            val oldest = snapshots.removeAt(0)
+            try {
+                oldest.zipFile?.delete()
+            } catch (_: Exception) {
+                // best-effort
+            }
         }
     }
 
@@ -417,5 +435,8 @@ class ActionHistory(
     companion object {
         /** Arquivos maiores que isso não entram no snapshot (8 MiB). */
         const val MAX_SNAPSHOT_FILE_BYTES: Long = 8L * 1024 * 1024
+
+        /** Teto de snapshots mantidos; os mais antigos são podados (zip deletado). */
+        private const val MAX_SNAPSHOTS = 5
     }
 }
