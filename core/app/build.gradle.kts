@@ -181,6 +181,7 @@ dependencies {
     implementation(libs.composite.javapoet)
 
     // Local projects here
+    implementation(projects.aiAgent)
     implementation(projects.core.actions)
     implementation(projects.core.common)
     implementation(projects.core.indexingApi)

@@ -39,7 +39,9 @@ import dev.mutwakil.androidide.BuildConfig
 import dev.mutwakil.androidide.activities.CrashHandlerActivity
 import dev.mutwakil.androidide.activities.editor.IDELogcatReader
 import dev.mutwakil.androidide.buildinfo.BuildInfo
+import dev.mutwakil.androidide.di.aiAgentModule
 import dev.mutwakil.androidide.di.coreModule
+import dev.mutwakil.androidide.di.initAiAgent
 import dev.mutwakil.androidide.editor.schemes.IDEColorSchemeProvider
 import dev.mutwakil.androidide.eventbus.events.preferences.PreferenceChangeEvent
 import dev.mutwakil.androidide.events.AppEventsIndex
@@ -103,6 +105,7 @@ class IDEApplication : TermuxApplication() {
     super.onCreate()
     
     ensureKoinStarted()
+    initAiAgent()
 
 //    SentryAndroid.init(this) { options: SentryAndroidOptions ->
 //      // Reduce replay quality to LOW to prevent OOM
@@ -152,7 +155,7 @@ class IDEApplication : TermuxApplication() {
 		runCatching { GlobalContext.get() }.getOrNull()?.let { return }
 		startKoin {
 			androidContext(this@IDEApplication)
-			modules(coreModule)
+			modules(coreModule, aiAgentModule)
 		}
   }
 

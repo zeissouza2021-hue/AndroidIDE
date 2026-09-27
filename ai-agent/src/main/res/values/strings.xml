@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  AndroidIDE is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidIDE is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<resources>
+    <!-- Base strings for the :ai-agent module. Other fronts add their own aiagent_-prefixed strings. -->
+    <string name="aiagent_app_name">AI Agent</string>
+    <string name="aiagent_chat_title">AI Chat</string>
+    <string name="aiagent_settings_title">AI Providers</string>
+    <string name="aiagent_no_provider_configured">No AI provider configured yet</string>
+    <string name="aiagent_error_generic">Something went wrong. Please try again.</string>
+
+    <!-- AI chat UI (front-c) -->
+    <string name="aiagent_provider">Provider</string>
+    <string name="aiagent_close">Close</string>
+    <string name="aiagent_no_providers">No AI providers registered.</string>
+    <string name="aiagent_no_config_for_provider">Provider %1$s has no configuration. Open the AI provider settings to configure it.</string>
+    <string name="aiagent_open_settings">Open settings</string>
+    <string name="aiagent_provider_switched">Switched to %1$s</string>
+    <string name="aiagent_input_hint">Ask the AI\u2026</string>
+    <string name="aiagent_send">Send</string>
+    <string name="aiagent_attach_image">Attach image</string>
+    <string name="aiagent_attach_file">Attach file</string>
+    <string name="aiagent_voice_input">Voice input</string>
+    <string name="aiagent_remove_attachment">Remove attachment</string>
+    <string name="aiagent_mode_agent">Agent</string>
+    <string name="aiagent_mode_chat">Chat</string>
+    <string name="aiagent_mode_changed_agent">Agent mode: the AI can use tools to read and modify the project.</string>
+    <string name="aiagent_mode_changed_chat">Chat mode: conversation only, no tools.</string>
+    <string name="aiagent_working">Working\u2026</string>
+    <string name="aiagent_stop">Stop</string>
+    <string name="aiagent_cancelled">Cancelled.</string>
+    <string name="aiagent_empty_state">Ask anything about your project.\nAttach images or files when the provider supports it.</string>
+    <string name="aiagent_plan_title">Plan</string>
+    <string name="aiagent_tool_running">running\u2026</string>
+    <string name="aiagent_tool_ok">done</string>
+    <string name="aiagent_tool_failed">failed</string>
+    <string name="aiagent_attachment_label">Attachment: %1$s</string>
+    <string name="aiagent_cap_text">Text</string>
+    <string name="aiagent_cap_voice">Voice</string>
+    <string name="aiagent_cap_vision">Vision</string>
+    <string name="aiagent_cap_files">Files</string>
+    <string name="aiagent_cap_tools">Tools</string>
+    <string name="aiagent_cap_streaming">Streaming</string>
+    <string name="aiagent_allow">Allow</string>
+    <string name="aiagent_deny">Deny</string>
+    <string name="aiagent_voice_unavailable">Voice input is not available on this device.</string>
+    <string name="aiagent_voice_permission_required">Microphone permission is required for voice input.</string>
+    <string name="aiagent_voice_error_network">Network error during voice recognition. Try again.</string>
+    <string name="aiagent_voice_error_no_match">Could not understand what was said. Try again.</string>
+    <string name="aiagent_voice_error_busy">Voice recognition is busy. Try again in a moment.</string>
+    <string name="aiagent_voice_error_generic">Voice recognition failed. Try again.</string>
+    <string name="aiagent_voice_listening">Listening\u2026 speak now</string>
+
+    <!-- AI provider settings (front-f) -->
+    <string name="aiagent_settings_summary">Configure AI providers, API keys and models</string>
+    <string name="aiagent_settings_category">AI</string>
+    <string name="aiagent_provider_not_configured">Not configured — tap to set up</string>
+    <string name="aiagent_config_endpoint">Endpoint URL</string>
+    <string name="aiagent_config_model">Model</string>
+    <string name="aiagent_config_api_key">API key</string>
+    <string name="aiagent_config_test">Test connection</string>
+    <string name="aiagent_config_save">Save</string>
+    <string name="aiagent_config_cancel">Cancel</string>
+    <string name="aiagent_config_testing">Testing connection…</string>
+    <string name="aiagent_config_test_ok">Connection OK: %1$s</string>
+    <string name="aiagent_config_test_failed">Connection failed: %1$s</string>
+    <string name="aiagent_config_encrypted_notice">Your API key is stored encrypted on this device.</string>
+    <string name="aiagent_cap_code">Code</string>
+</resources>

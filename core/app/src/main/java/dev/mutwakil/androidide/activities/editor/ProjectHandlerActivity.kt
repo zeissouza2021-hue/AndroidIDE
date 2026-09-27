@@ -36,6 +36,7 @@ import dev.mutwakil.androidide.actions.ActionsRegistry.Companion.getInstance
 import dev.mutwakil.androidide.actions.etc.FindInFileAction
 import dev.mutwakil.androidide.actions.etc.FindInProjectAction
 import dev.mutwakil.androidide.actions.internal.DefaultActionsRegistry
+import dev.mutwakil.androidide.aiintegration.AiIntegration
 import dev.mutwakil.androidide.databinding.LayoutSearchProjectBinding
 import dev.mutwakil.androidide.flashbar.Flashbar
 import dev.mutwakil.androidide.fragments.FindActionDialog
@@ -526,7 +527,7 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
     buildServiceConnection.onConnected = null
     editorViewModel.isBoundToBuildSerice = true
     Lookup.getDefault().update(BuildService.KEY_BUILD_SERVICE, service)
-    service.setEventListener(mBuildEventListener)
+    service.setEventListener(AiIntegration.install(mBuildEventListener))
     readoptWatchedProcesses(service)
 
     if (service.isToolingServerStarted()) {

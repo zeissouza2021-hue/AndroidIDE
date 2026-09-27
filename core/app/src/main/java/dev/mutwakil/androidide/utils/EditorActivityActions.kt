@@ -21,6 +21,7 @@ import dev.mutwakil.androidide.actions.ActionItem.Location.EDITOR_FILE_TABS
 import dev.mutwakil.androidide.actions.ActionItem.Location.EDITOR_FILE_TREE
 import dev.mutwakil.androidide.actions.ActionItem.Location.EDITOR_TOOLBAR
 import dev.mutwakil.androidide.actions.ActionsRegistry
+import dev.mutwakil.androidide.actions.ai.AiChatAction
 import dev.mutwakil.androidide.actions.build.ProjectSyncAction
 import dev.mutwakil.androidide.actions.build.QuickRunAction
 import dev.mutwakil.androidide.actions.build.RunTasksAction
@@ -76,6 +77,7 @@ class EditorActivityActions {
       registry.registerAction(ReloadColorSchemesAction(context, order++))
       registry.registerAction(DisconnectLogSendersAction(context, order++))
       registry.registerAction(LaunchAppAction(context, order++))
+      registry.registerAction(AiChatAction(context, order++))
 
       // editor text actions
       registry.registerAction(ExpandSelectionAction(context, order++))

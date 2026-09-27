@@ -134,6 +134,7 @@ rootProject.name = "AndroidIDE"
 
 // keep this sorted alphabetically
 include(
+  ":ai-agent",
   ":annotation:annotations",
   ":annotation:processors",
   ":annotation:processors-ksp",
