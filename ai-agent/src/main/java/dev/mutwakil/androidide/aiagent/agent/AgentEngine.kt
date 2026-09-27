@@ -19,7 +19,7 @@ package dev.mutwakil.androidide.aiagent.agent
 
 import com.google.gson.JsonParser
 import dev.mutwakil.androidide.aiagent.agent.tools.AnalyzeImageTool
-import dev.mutwakil.androidide.aiagent.agent.tools.ConditionalConfirmation
+import dev.mutwakil.androidide.aiagent.agent.ConditionalConfirmation
 import dev.mutwakil.androidide.aiagent.agent.tools.summarizeArgs
 import dev.mutwakil.androidide.aiagent.context.ProjectContextIndexer
 import dev.mutwakil.androidide.aiagent.context.ProjectSnapshot
@@ -573,7 +573,7 @@ class AgentEngine(
     // System prompt
     // ------------------------------------------------------------------
 
-    private fun buildSystemPrompt(toolDefs: List<ToolDefinition>): String {
+    private suspend fun buildSystemPrompt(toolDefs: List<ToolDefinition>): String {
         val toolsDesc = if (toolDefs.isEmpty()) {
             "(nenhuma tool disponível)"
         } else {
@@ -603,7 +603,7 @@ class AgentEngine(
         """.trimIndent()
     }
 
-    private fun projectDescription(): String {
+    private suspend fun projectDescription(): String {
         try {
             val snapshot: ProjectSnapshot = contextIndexer.snapshot(projectRoot)
             val text = snapshot.toString()

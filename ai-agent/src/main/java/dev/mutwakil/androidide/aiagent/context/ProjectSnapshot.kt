@@ -34,6 +34,6 @@ data class ProjectSnapshot(
     val truncated: Boolean,
     /** Programming/markup languages detected by file extension. */
     val languages: Set<String>,
-    /** Concatenated settings.gradle*/build.gradle* contents, truncated to ~4k chars. */
+    /** Concatenated settings.gradle[.kts] / build.gradle[.kts] contents, truncated to ~4k chars. */
     val dependencies: String,
 )

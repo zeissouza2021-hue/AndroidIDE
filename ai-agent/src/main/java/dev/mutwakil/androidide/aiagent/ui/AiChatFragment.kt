@@ -364,13 +364,13 @@ class AiChatFragment : Fragment() {
             .setTitle(title)
             .setMessage(detail)
             .setPositiveButton(R.string.aiagent_allow) { _, _ ->
-              if (!cont.isCompleted) cont.resume(true)
+              if (!cont.isCompleted) cont.resume(true) {}
             }
             .setNegativeButton(R.string.aiagent_deny) { _, _ ->
-              if (!cont.isCompleted) cont.resume(false)
+              if (!cont.isCompleted) cont.resume(false) {}
             }
             .setOnCancelListener {
-              if (!cont.isCompleted) cont.resume(false)
+              if (!cont.isCompleted) cont.resume(false) {}
             }
             .show()
         }

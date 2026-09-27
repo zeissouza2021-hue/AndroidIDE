@@ -162,7 +162,7 @@ class ProjectContextIndexer {
         return sb.toString()
     }
 
-    /** Concatenates settings.gradle*/build.gradle* contents found among [files]. */
+    /** Concatenates settings.gradle[.kts] / build.gradle[.kts] contents found among [files]. */
     private fun extractDependencies(root: File, files: List<File>): String {
         val sb = StringBuilder()
         val gradleFiles = files.filter { it.name in GRADLE_FILES }.take(MAX_GRADLE_FILES)

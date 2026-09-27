@@ -18,6 +18,25 @@
 package dev.mutwakil.androidide.aiagent
 
 import android.content.Context
+import dev.mutwakil.androidide.aiagent.agent.ActionHistory
+import dev.mutwakil.androidide.aiagent.agent.AgentEngine
+import dev.mutwakil.androidide.aiagent.agent.AgentTool
+import dev.mutwakil.androidide.aiagent.agent.PermissionManager
+import dev.mutwakil.androidide.aiagent.agent.tools.AnalyzeDocumentTool
+import dev.mutwakil.androidide.aiagent.agent.tools.AnalyzeImageTool
+import dev.mutwakil.androidide.aiagent.agent.tools.BuildProjectTool
+import dev.mutwakil.androidide.aiagent.agent.tools.CompareImagesTool
+import dev.mutwakil.androidide.aiagent.agent.tools.CreateFileTool
+import dev.mutwakil.androidide.aiagent.agent.tools.DeleteFileTool
+import dev.mutwakil.androidide.aiagent.agent.tools.EditFileTool
+import dev.mutwakil.androidide.aiagent.agent.tools.GitDiffTool
+import dev.mutwakil.androidide.aiagent.agent.tools.ProjectSearchTool
+import dev.mutwakil.androidide.aiagent.agent.tools.ReadBuildLogsTool
+import dev.mutwakil.androidide.aiagent.agent.tools.ReadFileTool
+import dev.mutwakil.androidide.aiagent.agent.tools.RunCommandTool
+import dev.mutwakil.androidide.aiagent.agent.tools.RunTestsTool
+import dev.mutwakil.androidide.aiagent.agent.tools.SearchCodeTool
+import dev.mutwakil.androidide.aiagent.agent.tools.UndoChangesTool
 import dev.mutwakil.androidide.aiagent.context.ProjectContextIndexer
 import dev.mutwakil.androidide.aiagent.integration.BuildBridgeProvider
 import dev.mutwakil.androidide.aiagent.model.AgentMode
@@ -50,7 +69,7 @@ object AiAgent {
     private var store: ProviderConfigStore? = null
     private var appContext: Context? = null
     private val registry = ProviderRegistry()
-    private val tools = mutableListOf<agent.AgentTool>()
+    private val tools = mutableListOf<AgentTool>()
     private val contextIndexer = ProjectContextIndexer()
 
     /**
@@ -81,7 +100,7 @@ object AiAgent {
      * Registers an agent tool (front-d) so [newEngine] can hand it to the engine.
      * Tools are also usable standalone via the `agent` package.
      */
-    fun registerTool(tool: agent.AgentTool) {
+    fun registerTool(tool: AgentTool) {
         synchronized(tools) { tools.add(tool) }
     }
 
@@ -94,21 +113,21 @@ object AiAgent {
             if (tools.isNotEmpty()) return
             tools.addAll(
                 listOf(
-                    agent.tools.ReadFileTool(),
-                    agent.tools.SearchCodeTool(),
-                    agent.tools.CreateFileTool(),
-                    agent.tools.EditFileTool(),
-                    agent.tools.DeleteFileTool(),
-                    agent.tools.ProjectSearchTool(),
-                    agent.tools.RunCommandTool(),
-                    agent.tools.BuildProjectTool(),
-                    agent.tools.ReadBuildLogsTool(),
-                    agent.tools.RunTestsTool(),
-                    agent.tools.GitDiffTool(),
-                    agent.tools.UndoChangesTool(),
-                    agent.tools.AnalyzeImageTool(),
-                    agent.tools.AnalyzeDocumentTool(),
-                    agent.tools.CompareImagesTool(),
+                    ReadFileTool(),
+                    SearchCodeTool(),
+                    CreateFileTool(),
+                    EditFileTool(),
+                    DeleteFileTool(),
+                    ProjectSearchTool(),
+                    RunCommandTool(),
+                    BuildProjectTool(),
+                    ReadBuildLogsTool(),
+                    RunTestsTool(),
+                    GitDiffTool(),
+                    UndoChangesTool(),
+                    AnalyzeImageTool(),
+                    AnalyzeDocumentTool(),
+                    CompareImagesTool(),
                 )
             )
         }
@@ -121,11 +140,11 @@ object AiAgent {
         checkNotNull(store) { "AiAgent.init(context) must be called before configStore()" }
 
     /**
-     * Creates an [agent.AgentEngine] (implemented by front-d in the `agent` package)
+     * Creates an [AgentEngine] (implemented by front-d in the `agent` package)
      * wired with the registered tools, the shared [ProjectContextIndexer] and the
      * current [buildBridgeProvider].
      *
-     * @param permissions the [agent.PermissionManager] to use; when null a fresh
+     * @param permissions the [PermissionManager] to use; when null a fresh
      *   one that denies confirmations is created. The chat UI passes its own
      *   instance whose `confirmCallback` shows a dialog to the user.
      */
@@ -134,18 +153,18 @@ object AiAgent {
         config: ProviderConfig,
         projectRoot: File,
         mode: AgentMode,
-        permissions: agent.PermissionManager? = null,
-    ): agent.AgentEngine {
+        permissions: PermissionManager? = null,
+    ): AgentEngine {
         val historyDir = appContext?.let { File(it.cacheDir, "aiagent").apply { mkdirs() } }
-        return agent.AgentEngine(
+        return AgentEngine(
             plugin = plugin,
             config = config,
             tools = synchronized(tools) { tools.toList() },
             projectRoot = projectRoot,
             mode = mode,
-            permissions = permissions ?: agent.PermissionManager(),
+            permissions = permissions ?: PermissionManager(),
             buildBridge = buildBridgeProvider?.get(),
-            history = agent.ActionHistory(historyDir),
+            history = ActionHistory(historyDir),
             contextIndexer = contextIndexer,
         )
     }
