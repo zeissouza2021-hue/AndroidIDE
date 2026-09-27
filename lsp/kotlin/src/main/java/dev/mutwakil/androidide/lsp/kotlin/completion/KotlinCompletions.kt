@@ -361,7 +361,13 @@ private fun KaSession.collectExtensionFunctions(
 context(env: CompilationEnvironment, ctx: AnalysisContext)
 private fun KaSession.collectScopeCompletions(to: MutableList<CompletionItem>) {
 	if (ctx.partial.isBlank()) {
-		logger.warn("cannot complete for blank partial candidate")
+		// Sem prefixo (ex.: invoke manual): ainda oferece keywords e
+		// snippets, que são baratos de computar. A coleta de símbolos do
+		// escopo e dos índices é pulada — com prefixo vazio ela traria
+		// milhares de candidatos sem filtro útil.
+		logger.debug("completing with blank partial: keywords and snippets only")
+		collectSnippetCompletions(to)
+		collectKeywordCompletions(to)
 		return
 	}
 
