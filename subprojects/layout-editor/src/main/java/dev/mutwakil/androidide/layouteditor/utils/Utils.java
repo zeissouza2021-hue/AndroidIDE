@@ -20,7 +20,7 @@ import android.view.View;
 
 import androidx.annotation.NonNull;
 
-import com.google.android.material.R;
+import dev.mutwakil.androidide.layouteditor.R;
 import com.google.android.material.color.MaterialColors;
 
 import dev.mutwakil.androidide.layouteditor.R.string;
