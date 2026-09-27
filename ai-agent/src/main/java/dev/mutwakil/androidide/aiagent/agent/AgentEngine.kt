@@ -391,6 +391,13 @@ class AgentEngine(
                 val path = arg("imagePath") ?: return ToolResult.error("imagePath ausente.")
                 question = arg("question") ?: "Descreva esta imagem em detalhes."
                 val file = safeFile(path) ?: return ToolResult.error("Caminho fora do projeto: $path")
+                // Revalida o teto da tool: o arquivo pode ter crescido entre a
+                // validação e o envio ao provider.
+                if (file.length() > AnalyzeImageTool.MAX_IMAGE_BYTES) {
+                    return ToolResult.error(
+                        "Imagem acima do limite (${AnalyzeImageTool.MAX_IMAGE_BYTES} bytes): $path"
+                    )
+                }
                 attachments.add(
                     Attachment(AttachmentType.IMAGE, file, AnalyzeImageTool.mimeFor(file.extension), file.name)
                 )
@@ -402,6 +409,11 @@ class AgentEngine(
                     "diferenças visuais e possíveis problemas. Responda em português."
                 for (p in listOf(pathA, pathB)) {
                     val file = safeFile(p) ?: return ToolResult.error("Caminho fora do projeto: $p")
+                    if (file.length() > AnalyzeImageTool.MAX_IMAGE_BYTES) {
+                        return ToolResult.error(
+                            "Imagem acima do limite (${AnalyzeImageTool.MAX_IMAGE_BYTES} bytes): $p"
+                        )
+                    }
                     attachments.add(
                         Attachment(AttachmentType.IMAGE, file, AnalyzeImageTool.mimeFor(file.extension), file.name)
                     )
