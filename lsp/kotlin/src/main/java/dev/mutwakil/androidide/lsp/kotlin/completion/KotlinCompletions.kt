@@ -295,7 +295,9 @@ private fun KaSession.collectMemberCompletions(to: MutableList<CompletionItem>) 
 
 	collectMembersFromType(receiverType, to)
 
-	if (qualifiedExpr is KtSafeQualifiedExpression) {
+	if (qualifiedExpr is KtSafeQualifiedExpression && receiverType.isMarkedNullable) {
+		// Com receiver já não-nulo, a segunda coleta abaixo repetiria os
+		// mesmos membros (itens duplicados na lista).
 		val nonNullType = receiverType.withNullability(isMarkedNullable = false)
 		collectMembersFromType(nonNullType, to)
 	}
