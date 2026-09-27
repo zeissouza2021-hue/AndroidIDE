@@ -81,7 +81,7 @@ class AiChatAction(context: Context, override val order: Int) : EditorActivityAc
     return runCatching {
       val cursor = editor.text.cursor
       if (!cursor.isSelected) return null
-      val selected = editor.text.subSequence(cursor.left(), cursor.right()).toString()
+      val selected = editor.text.subSequence(cursor.left().index, cursor.right().index).toString()
       selected.take(MAX_SELECTION_CHARS).takeIf { it.isNotBlank() }
     }.getOrNull()
   }

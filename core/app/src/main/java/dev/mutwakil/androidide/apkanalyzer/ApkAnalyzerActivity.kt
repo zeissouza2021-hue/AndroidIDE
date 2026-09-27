@@ -179,7 +179,7 @@ class ApkAnalyzerActivity : EdgeToEdgeIDEActivity() {
         val size = report.sizeByCategory(category)
         if (size > 0) {
           apkAnalyzerBreakdownContainer.addView(
-            breakdownRow(ApkDiff.categoryLabel(this, category), size, report.totalSize))
+            breakdownRow(ApkDiff.categoryLabel(this@ApkAnalyzerActivity, category), size, report.totalSize))
         }
       }
 
@@ -202,7 +202,7 @@ class ApkAnalyzerActivity : EdgeToEdgeIDEActivity() {
       renderClassList("")
 
       apkAnalyzerCompareText.text = getString(R.string.apk_analyzer_compare_hint)
-      apkAnalyzerTipsText.text = ApkTips.format(this, ApkTips.analyze(this, report))
+      apkAnalyzerTipsText.text = ApkTips.format(this@ApkAnalyzerActivity, ApkTips.analyze(this@ApkAnalyzerActivity, report))
     }
   }
 
