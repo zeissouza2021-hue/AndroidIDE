@@ -93,7 +93,7 @@ class StructureView(
 	 */
 	init {
 		val primaryColor =
-			MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimary)
+			MaterialColors.getColor(this, R.attr.colorPrimary)
 		paint.color = primaryColor
 		paint.isAntiAlias = true
 		paint.strokeWidth = getDip(1).toFloat()
