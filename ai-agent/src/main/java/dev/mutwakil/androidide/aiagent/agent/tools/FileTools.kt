@@ -563,3 +563,5 @@ fun fileTools(): List<BaseTool> = listOf(
     DeleteFileTool(),
     ProjectSearchTool()
 )
+
+// v2: linha de re-disparo do build (sem efeito funcional)
