@@ -94,18 +94,13 @@
 
         </LinearLayout>
 
-        <!-- v2: coluna de ações da entrada -->
+        <!-- v2: coluna de ações da entrada (o toggle de fallback vive no diálogo de
+             configuração; aqui só o excluir, para não espremer a coluna de texto) -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="vertical">
-
-            <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/ai_chat_v2_fallback_switch"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/ai_chat_v2_provider_use_fallback" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/ai_chat_v2_delete_button"

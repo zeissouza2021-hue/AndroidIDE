@@ -80,10 +80,6 @@ class AiProviderSettingsActivity : AppCompatActivity() {
         AiAgent.configStore().setActiveConfigId(config.configId)
         adapter.notifyDataSetChanged()
       },
-      onToggleFallback = { config, enabled ->
-        AiAgent.configStore().saveProviderConfig(config.copy(useAsFallback = enabled))
-        refresh()
-      },
       onDelete = ::confirmDelete
     )
     findViewById<RecyclerView>(R.id.aiagent_provider_list).apply {
@@ -178,17 +174,23 @@ class AiProviderSettingsActivity : AppCompatActivity() {
         ?: plugin?.let { AiChatV2Capabilities.resolve(it, existing) }
         ?: emptySet()
       capsGroup.removeAllViews()
-      Capability.values().forEach { capability ->
-        capsGroup.addView(
-          Chip(this).apply {
-            text = capabilityLabel(capability)
-            tag = capability
-            isCheckable = true
-            isChecked = capability in effective
-            setOnCheckedChangeListener { _, _ -> capsTouched = true }
-          }
-        )
-      }
+      // v2: agrupa por rótulo — várias Capability mapeiam para o mesmo chip
+      // (ex.: IMAGE_INPUT e VISION viram "Vision"); sem isso o diálogo mostrava
+      // chips duplicados ("Vision" 2x, "Files" 3x, "Tools" 2x).
+      Capability.values()
+        .groupBy { capabilityLabel(it) }
+        .forEach { (_, capabilities) ->
+          val representative = capabilities.first()
+          capsGroup.addView(
+            Chip(this).apply {
+              text = capabilityLabel(representative)
+              tag = capabilities.toSet()
+              isCheckable = true
+              isChecked = capabilities.any { it in effective }
+              setOnCheckedChangeListener { _, _ -> capsTouched = true }
+            }
+          )
+        }
       tvCapsMode.text = if (capsOverride == null) {
         getString(R.string.ai_chat_v2_provider_capabilities) + " — " +
           getString(R.string.ai_chat_v2_provider_caps_default)
@@ -246,9 +248,11 @@ class AiProviderSettingsActivity : AppCompatActivity() {
       val model = actvModel.text?.toString()?.trim().orEmpty()
       if (name.isBlank() || model.isBlank()) return null
       val checkedCaps = (0 until capsGroup.childCount)
-        .map { (capsGroup.getChildAt(it) as Chip).tag as? Capability }
-        .filterNotNull()
-        .filterIndexed { index, _ -> (capsGroup.getChildAt(index) as Chip).isChecked }
+        .filter { (capsGroup.getChildAt(it) as Chip).isChecked }
+        .flatMap { chip ->
+          @Suppress("UNCHECKED_CAST")
+          ((chip as Chip).tag as? Set<Capability>).orEmpty()
+        }
         .toSet()
       return ProviderConfig(
         providerId = plugin.id,
@@ -332,7 +336,6 @@ class AiProviderSettingsActivity : AppCompatActivity() {
   private inner class ProviderAdapter(
     private val onEdit: (ProviderConfig?) -> Unit,
     private val onSelectActive: (ProviderConfig) -> Unit,
-    private val onToggleFallback: (ProviderConfig, Boolean) -> Unit,
     private val onDelete: (ProviderConfig) -> Unit
   ) : RecyclerView.Adapter<ProviderAdapter.Holder>() {
 
@@ -363,8 +366,6 @@ class AiProviderSettingsActivity : AppCompatActivity() {
       private val defaultBadge: TextView =
         view.findViewById(R.id.ai_chat_v2_provider_default_badge)
       private val chips: ChipGroup = view.findViewById(R.id.aiagent_capability_chips)
-      private val fallbackSwitch: MaterialSwitch =
-        view.findViewById(R.id.ai_chat_v2_fallback_switch)
       private val deleteButton: MaterialButton =
         view.findViewById(R.id.ai_chat_v2_delete_button)
 
@@ -394,12 +395,6 @@ class AiProviderSettingsActivity : AppCompatActivity() {
               }
             )
           }
-
-        fallbackSwitch.setOnCheckedChangeListener(null)
-        fallbackSwitch.isChecked = config.useAsFallback
-        fallbackSwitch.setOnCheckedChangeListener { _, enabled ->
-          onToggleFallback(config, enabled)
-        }
 
         deleteButton.isVisible = !config.isDefault
         deleteButton.setOnClickListener { onDelete(config) }
