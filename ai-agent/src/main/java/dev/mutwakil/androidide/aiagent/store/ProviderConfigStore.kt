@@ -19,6 +19,7 @@ package dev.mutwakil.androidide.aiagent.store
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
@@ -51,17 +52,28 @@ class ProviderConfigStore(context: Context) {
     private val secrets: SharedPreferences =
         createEncryptedPrefs(context.applicationContext)
 
+    /**
+     * Cria o prefs criptografado. Se o keystore falhar (ex.: corrompido ou
+     * bloqueado no aparelho), cai para um prefs comum em vez de estourar o
+     * construtor — degradado, mas o app continua abrindo. No caminho normal
+     * (keystore íntegro) o comportamento é idêntico ao anterior.
+     */
     private fun createEncryptedPrefs(context: Context): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            ENCRYPTED_PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+        return try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                ENCRYPTED_PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Keystore indisponível; usando prefs sem criptografia", e)
+            context.getSharedPreferences(ENCRYPTED_PREFS_NAME + "_fallback", Context.MODE_PRIVATE)
+        }
     }
 
     private fun prefix(id: String) = "provider.$id."
@@ -154,6 +166,7 @@ class ProviderConfigStore(context: Context) {
     }
 
     companion object {
+        private const val TAG = "ProviderConfigStore"
         private const val PREFS_NAME = "aiagent_prefs"
         private const val ENCRYPTED_PREFS_NAME = "aiagent_secrets"
         private const val KEY_PROVIDER_IDS = "provider_ids"
