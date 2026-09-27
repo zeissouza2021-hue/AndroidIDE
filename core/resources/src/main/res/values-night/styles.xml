@@ -17,7 +17,7 @@
   ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
   -->
 
-  <style name="Theme.AndroidIDE.Material3" parent="Theme.Material3.Dark.NoActionBar"/>
+  <style name="Theme.AndroidIDE.Material3" parent="Theme.Material3Expressive.Dark.NoActionBar"/>
 
   <style name="Theme.AndroidIDE" parent="Theme.AndroidIDE.Styled">
     <!-- Left drawer. -->
