@@ -65,7 +65,8 @@ data class ChatUiState(
    */
   val capabilities: Set<Capability> = emptySet(),
   val pendingAttachments: List<Attachment> = emptyList(),
-  val mode: AgentMode = AgentMode.AGENT
+  /** v2: o painel abre na aba Perguntar; Agente (com tools) é opt-in. */
+  val mode: AgentMode = AgentMode.CHAT
 )
 
 /**
