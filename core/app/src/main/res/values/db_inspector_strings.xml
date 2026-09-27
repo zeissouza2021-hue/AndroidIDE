@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  AndroidIDE is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidIDE is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+<resources>
+    <!-- Database Inspector (dev.mutwakil.androidide.dbinspector) -->
+    <string name="db_inspector_action_title">Database Inspector</string>
+    <string name="db_inspector_title">Database Inspector</string>
+    <string name="db_inspector_menu_refresh">Refresh</string>
+    <string name="db_inspector_label_database">Database</string>
+    <string name="db_inspector_label_table">Table</string>
+    <string name="db_inspector_tab_tables">Tables</string>
+    <string name="db_inspector_tab_query">SQL Query</string>
+    <string name="db_inspector_query_hint">SELECT * FROM table_name LIMIT 100</string>
+    <string name="db_inspector_run">Run</string>
+    <string name="db_inspector_write_mode">Allow writes</string>
+    <string name="db_inspector_push_changes">Push changes to app</string>
+    <string name="db_inspector_status_loading">Loading database…</string>
+    <string name="db_inspector_err_no_package">Could not determine the app package.</string>
+    <string name="db_inspector_err_not_installed">App %1$s is not installed. Build and run it on this device first.</string>
+    <string name="db_inspector_err_not_debuggable">App %1$s is not debuggable. The inspector needs a debuggable build (debug variant).</string>
+    <string name="db_inspector_err_no_databases">No databases found for %1$s. Run the app so it can create its database first.</string>
+    <string name="db_inspector_err_access_failed">Could not read the app data: %1$s</string>
+    <string name="db_inspector_err_invalid_database">“%1$s” is not a valid SQLite database.</string>
+    <string name="db_inspector_err_no_tables">No tables found in “%1$s”.</string>
+    <string name="db_inspector_rows_info">%1$d of %2$d rows</string>
+    <string name="db_inspector_query_write_disabled">This query modifies data. Enable “Allow writes” to run it.</string>
+    <string name="db_inspector_query_empty">Type a SQL query first.</string>
+    <string name="db_inspector_query_empty_result">Query returned no rows.</string>
+    <string name="db_inspector_query_rows_returned">%1$d row(s) returned</string>
+    <string name="db_inspector_query_exec_ok">Executed successfully (%1$d row(s) affected).</string>
+    <string name="db_inspector_query_error">Query failed: %1$s</string>
+    <string name="db_inspector_null">NULL</string>
+    <string name="db_inspector_blob">&lt;blob, %1$d bytes&gt;</string>
+    <string name="db_inspector_confirm_write_title">Allow writes?</string>
+    <string name="db_inspector_confirm_write_message">Write mode runs your SQL against a copy of the app’s database. Nothing is sent back to the app until you tap “Push changes to app”. Writing to another app’s database can corrupt its data — use it only for debugging.</string>
+    <string name="db_inspector_confirm_push_title">Push changes to the app?</string>
+    <string name="db_inspector_confirm_push_message">This overwrites “%1$s” inside %2$s with your modified copy. If the app is running, it may keep using stale data afterwards. Continue?</string>
+    <string name="db_inspector_push_ok">Changes pushed to the app.</string>
+    <string name="db_inspector_push_failed">Could not push changes: %1$s</string>
+    <string name="db_inspector_refreshed">Database reloaded.</string>
+</resources>
