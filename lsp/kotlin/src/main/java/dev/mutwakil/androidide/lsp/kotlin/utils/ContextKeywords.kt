@@ -24,6 +24,12 @@ object ContextKeywords {
 		KtTokens.FUN_KEYWORD,// local declarations
 		KtTokens.OBJECT_KEYWORD,// anonymous / local object
 		KtTokens.CLASS_KEYWORD,// local class (rare but legal)
+		// expression keywords, valid as (or starting) statements too
+		KtTokens.THIS_KEYWORD,
+		KtTokens.SUPER_KEYWORD,
+		KtTokens.TRUE_KEYWORD,
+		KtTokens.FALSE_KEYWORD,
+		KtTokens.NULL_KEYWORD,
 	)
 
 	/** Declaration starters at top-level / class body */
