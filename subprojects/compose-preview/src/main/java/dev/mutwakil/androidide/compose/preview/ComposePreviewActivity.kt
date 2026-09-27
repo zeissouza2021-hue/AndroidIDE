@@ -6,15 +6,21 @@ import android.os.Bundle
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.mutwakil.androidide.compose.preview.databinding.ActivityComposePreviewBinding
+import dev.mutwakil.androidide.compose.preview.deviceframe.DeviceFrameDialogs
+import dev.mutwakil.androidide.compose.preview.deviceframe.DeviceFrameView
+import dev.mutwakil.androidide.compose.preview.deviceframe.DeviceProfile
+import dev.mutwakil.androidide.compose.preview.deviceframe.DeviceProfiles
 import dev.mutwakil.androidide.compose.preview.runtime.ComposableRenderer
 import dev.mutwakil.androidide.compose.preview.runtime.ComposeClassLoader
 import dev.mutwakil.androidide.compose.preview.ui.BoundedComposeView
@@ -40,6 +46,12 @@ class ComposePreviewActivity : AppCompatActivity() {
     private var toggleMenuItem: android.view.MenuItem? = null
     private var selectorAdapter: ArrayAdapter<String>? = null
 
+    private var deviceProfiles: List<DeviceProfile> = emptyList()
+    private var deviceProfile: DeviceProfile? = null
+    private var deviceFrameView: DeviceFrameView? = null
+    private var framedComposeView: ComposeView? = null
+    private var framedRenderer: ComposableRenderer? = null
+
     private val sourceCode: String by lazy {
         intent.getStringExtra(EXTRA_SOURCE_CODE) ?: ""
     }
@@ -58,6 +70,7 @@ class ComposePreviewActivity : AppCompatActivity() {
         setupToolbar()
         setupPreviewSelector()
         setupSinglePreview()
+        setupDeviceProfiles()
         setupBuildButton()
         observeState()
 
@@ -86,9 +99,109 @@ class ComposePreviewActivity : AppCompatActivity() {
                     viewModel.toggleDisplayMode()
                     true
                 }
+                R.id.action_device_frame -> {
+                    showDeviceSelector()
+                    true
+                }
+                R.id.action_device_frame_fold -> {
+                    toggleFold()
+                    true
+                }
                 else -> false
             }
         }
+    }
+
+    private fun setupDeviceProfiles() {
+        deviceProfiles = DeviceProfiles.defaults(this)
+    }
+
+    /**
+     * Seletor de perfis de aparelho ("emulador visual"). Sem moldura por
+     * padrão, para o comportamento atual não regredir.
+     */
+    private fun showDeviceSelector() {
+        DeviceFrameDialogs.showSelector(
+            this,
+            deviceProfiles,
+            deviceProfile,
+            noneLabel = getString(R.string.device_frame_none),
+        ) { selected ->
+            applyDeviceProfile(selected)
+        }
+    }
+
+    private fun toggleFold() {
+        val profile = deviceProfile?.takeIf { it.isFoldable } ?: return
+        applyDeviceProfile(profile.copy(folded = !profile.folded))
+    }
+
+    /**
+     * Aplica o perfil: cria um ComposeView com o Configuration do aparelho
+     * (para LocalConfiguration/LocalDensity refletirem o dispositivo) dentro
+     * da moldura. null = volta ao preview padrão, sem moldura.
+     */
+    private fun applyDeviceProfile(profile: DeviceProfile?) {
+        deviceProfile = profile
+
+        deviceFrameView?.let { binding.previewContainer.removeView(it) }
+        deviceFrameView = null
+        framedComposeView = null
+        framedRenderer = null
+
+        val loader = classLoader
+        if (profile != null && loader != null) {
+            val frame = DeviceFrameView(this)
+            frame.layoutParams =
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                )
+            val composeView =
+                ComposeView(profile.wrap(this)).apply {
+                    layoutParams =
+                        FrameLayout.LayoutParams(
+                            FrameLayout.LayoutParams.MATCH_PARENT,
+                            FrameLayout.LayoutParams.MATCH_PARENT,
+                        )
+                    setViewCompositionStrategy(
+                        ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool
+                    )
+                }
+            frame.setProfile(profile, composeView)
+            frame.onResizeFinished = { resized -> applyDeviceProfile(resized) }
+            binding.previewContainer.addView(frame)
+            deviceFrameView = frame
+            framedComposeView = composeView
+            framedRenderer = ComposableRenderer(composeView, loader)
+        }
+
+        binding.toolbar.menu.findItem(R.id.action_device_frame_fold)?.let { foldItem ->
+            foldItem.isVisible = profile?.isFoldable == true
+            foldItem.isChecked = profile?.folded == true
+        }
+
+        val state = viewModel.previewState.value
+        updatePreviewVisibility(state)
+        if (
+            state is PreviewState.Ready &&
+                viewModel.displayMode.value == DisplayMode.SINGLE
+        ) {
+            val selected = viewModel.selectedPreview.value
+            if (selected != null) {
+                renderSinglePreview(state, selected)
+            }
+        }
+    }
+
+    private fun updatePreviewVisibility(state: PreviewState) {
+        val isReady = state is PreviewState.Ready
+        val isAllMode = viewModel.displayMode.value == DisplayMode.ALL
+        val framed = deviceProfile != null
+
+        binding.previewScrollView.isVisible = isReady && isAllMode
+        binding.singlePreviewView.isVisible = isReady && !isAllMode && !framed
+        deviceFrameView?.isVisible = isReady && !isAllMode && framed
     }
 
     private fun setupPreviewSelector() {
@@ -237,11 +350,7 @@ class ComposePreviewActivity : AppCompatActivity() {
         binding.emptyContainer.isVisible = state is PreviewState.Empty
         binding.needsBuildContainer.isVisible = state is PreviewState.NeedsBuild
 
-        val isReady = state is PreviewState.Ready
-        val isAllMode = viewModel.displayMode.value == DisplayMode.ALL
-
-        binding.previewScrollView.isVisible = isReady && isAllMode
-        binding.singlePreviewView.isVisible = isReady && !isAllMode
+        updatePreviewVisibility(state)
 
         when (state) {
             is PreviewState.Idle -> {
@@ -334,8 +443,7 @@ class ComposePreviewActivity : AppCompatActivity() {
 
         val state = viewModel.previewState.value
         if (state is PreviewState.Ready) {
-            binding.previewScrollView.isVisible = isAllMode
-            binding.singlePreviewView.isVisible = !isAllMode
+            updatePreviewVisibility(state)
 
             if (isAllMode) {
                 renderAllPreviews(state)
@@ -424,7 +532,8 @@ class ComposePreviewActivity : AppCompatActivity() {
     }
 
     private fun renderSinglePreview(state: PreviewState.Ready, functionName: String) {
-        singleRenderer?.render(
+        val renderer = if (deviceProfile != null) framedRenderer else singleRenderer
+        renderer?.render(
             dexFile = state.dexFile,
             className = state.className,
             functionName = functionName,
@@ -450,6 +559,9 @@ class ComposePreviewActivity : AppCompatActivity() {
         super.onDestroy()
         multiRenderers.clear()
         singleRenderer = null
+        framedRenderer = null
+        framedComposeView = null
+        deviceFrameView = null
         classLoader?.release()
         classLoader = null
         selectorAdapter = null

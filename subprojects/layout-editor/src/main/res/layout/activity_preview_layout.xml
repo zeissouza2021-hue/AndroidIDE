@@ -6,19 +6,40 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="?attr/homeAsUpIndicator" />
+
     <FrameLayout
         android:id="@+id/preview_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:layout_marginTop="?attr/actionBarSize"
         android:layout_gravity="center">
-        <!-- This will be the container for the previewed layout -->
+
+        <dev.mutwakil.androidide.layouteditor.deviceframe.DeviceFrameView
+            android:id="@+id/device_frame_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
     </FrameLayout>
 
-    <!-- <dev.mutwakil.androidide.layouteditor.editor.DesignEditor
-    android:id="@+id/design_editor"
-    android:layout_height="match_parent"
-    android:layout_width="match_parent"
-    android:scaleX="0.85"
-    android:scaleY="0.85" /> -->
+    <HorizontalScrollView
+        android:id="@+id/multi_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="?attr/actionBarSize"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/multi_container"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical" />
+
+    </HorizontalScrollView>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

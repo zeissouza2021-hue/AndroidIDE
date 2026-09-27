@@ -8,4 +8,16 @@
         android:title="@string/toggle_preview_mode"
         app:showAsAction="always" />
 
+    <item
+        android:id="@+id/action_device_frame"
+        android:title="@string/device_frame_select_device"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_device_frame_fold"
+        android:title="@string/device_frame_folded"
+        android:checkable="true"
+        android:visible="false"
+        app:showAsAction="never" />
+
 </menu>

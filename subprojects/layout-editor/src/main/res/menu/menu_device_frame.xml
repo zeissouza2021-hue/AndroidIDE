@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto">
+
+  <item
+    android:id="@+id/device_frame_select"
+    android:title="@string/device_frame_select_device"
+    android:icon="@drawable/cellphone_screenshot"
+    app:showAsAction="ifRoom" />
+
+  <item
+    android:id="@+id/device_frame_fold"
+    android:title="@string/device_frame_folded"
+    android:checkable="true"
+    app:showAsAction="never" />
+
+  <item
+    android:id="@+id/device_frame_multi"
+    android:title="@string/device_frame_multi"
+    android:checkable="true"
+    app:showAsAction="never" />
+
+</menu>
