@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  AndroidIDE is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidIDE is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+<resources>
+    <!-- Database Inspector (dev.mutwakil.androidide.dbinspector) -->
+    <string name="db_inspector_action_title">Inspetor de Banco de Dados</string>
+    <string name="db_inspector_title">Inspetor de Banco de Dados</string>
+    <string name="db_inspector_menu_refresh">Atualizar</string>
+    <string name="db_inspector_label_database">Banco de dados</string>
+    <string name="db_inspector_label_table">Tabela</string>
+    <string name="db_inspector_tab_tables">Tabelas</string>
+    <string name="db_inspector_tab_query">Consulta SQL</string>
+    <string name="db_inspector_query_hint">SELECT * FROM nome_da_tabela LIMIT 100</string>
+    <string name="db_inspector_run">Executar</string>
+    <string name="db_inspector_write_mode">Permitir escrita</string>
+    <string name="db_inspector_push_changes">Enviar alterações ao app</string>
+    <string name="db_inspector_status_loading">Carregando banco de dados…</string>
+    <string name="db_inspector_err_no_package">Não foi possível determinar o pacote do app.</string>
+    <string name="db_inspector_err_not_installed">O app %1$s não está instalado. Compile e execute-o neste dispositivo primeiro.</string>
+    <string name="db_inspector_err_not_debuggable">O app %1$s não é debuggable. O inspetor precisa de um build debuggable (variante debug).</string>
+    <string name="db_inspector_err_no_databases">Nenhum banco de dados encontrado para %1$s. Execute o app para que ele crie o banco primeiro.</string>
+    <string name="db_inspector_err_access_failed">Não foi possível ler os dados do app: %1$s</string>
+    <string name="db_inspector_err_invalid_database">“%1$s” não é um banco SQLite válido.</string>
+    <string name="db_inspector_err_no_tables">Nenhuma tabela encontrada em “%1$s”.</string>
+    <string name="db_inspector_rows_info">%1$d de %2$d linhas</string>
+    <string name="db_inspector_query_write_disabled">Esta consulta modifica dados. Ative “Permitir escrita” para executá-la.</string>
+    <string name="db_inspector_query_empty">Digite uma consulta SQL primeiro.</string>
+    <string name="db_inspector_query_empty_result">A consulta não retornou linhas.</string>
+    <string name="db_inspector_query_rows_returned">%1$d linha(s) retornada(s)</string>
+    <string name="db_inspector_query_exec_ok">Executado com sucesso (%1$d linha(s) afetada(s)).</string>
+    <string name="db_inspector_query_error">Falha na consulta: %1$s</string>
+    <string name="db_inspector_null">NULL</string>
+    <string name="db_inspector_blob">&lt;blob, %1$d bytes&gt;</string>
+    <string name="db_inspector_confirm_write_title">Permitir escrita?</string>
+    <string name="db_inspector_confirm_write_message">O modo escrita executa seu SQL sobre uma cópia do banco do app. Nada é enviado de volta ao app até você tocar em “Enviar alterações ao app”. Escrever no banco de outro app pode corromper os dados dele — use apenas para depuração.</string>
+    <string name="db_inspector_confirm_push_title">Enviar alterações ao app?</string>
+    <string name="db_inspector_confirm_push_message">Isso sobrescreve “%1$s” dentro de %2$s com a sua cópia modificada. Se o app estiver em execução, ele pode continuar usando dados desatualizados. Continuar?</string>
+    <string name="db_inspector_push_ok">Alterações enviadas ao app.</string>
+    <string name="db_inspector_push_failed">Não foi possível enviar as alterações: %1$s</string>
+    <string name="db_inspector_refreshed">Banco de dados recarregado.</string>
+</resources>
