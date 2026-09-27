@@ -22,6 +22,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.google.gson.JsonParseException
 import com.google.gson.JsonParser
 import dev.mutwakil.androidide.aiagent.gate.CapabilityGate
 import dev.mutwakil.androidide.aiagent.gate.UnsupportedCapabilityException
@@ -36,6 +37,7 @@ import dev.mutwakil.androidide.aiagent.model.ConnectionResult
 import dev.mutwakil.androidide.aiagent.model.ProviderConfig
 import dev.mutwakil.androidide.aiagent.model.Role
 import dev.mutwakil.androidide.aiagent.model.ToolCall
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -422,7 +424,15 @@ class AnthropicProvider : AiProviderPlugin {
     // ------------------------------------------------------------------
 
     private fun parseResponse(raw: String): ChatResponse {
-        val root = JsonParser.parseString(raw).asJsonObject
+        val root = try {
+            JsonParser.parseString(raw).asJsonObject
+        } catch (e: JsonParseException) {
+            throw IOException("Malformed Anthropic response: invalid JSON (${e.message})")
+        } catch (e: IllegalStateException) {
+            // CancellationException herda IllegalStateException: nunca engolir cancelamento.
+            if (e is CancellationException) throw e
+            throw IOException("Malformed Anthropic response: root is not a JSON object")
+        }
         val content = root.getAsJsonArray("content")
             ?: throw IOException("Malformed Anthropic response: missing content[]")
         val text = StringBuilder()

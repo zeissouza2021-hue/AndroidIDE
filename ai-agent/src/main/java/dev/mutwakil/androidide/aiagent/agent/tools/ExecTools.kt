@@ -91,7 +91,11 @@ class RunCommandTool : BaseTool(
         } catch (_: Exception) {
             return true
         }
-        if (blockedReason(command) != null) return true
+        if (blockedReason(command) != null) {
+            // Bloqueado: não pede confirmação à toa — o execute recusa
+            // direto com o motivo, sem diálogo inútil no meio.
+            return false
+        }
         return !isAllowlisted(command)
     }
 
@@ -158,32 +162,50 @@ class RunCommandTool : BaseTool(
          * Comandos (primeiro token) considerados seguros para leitura,
          * dispensados de confirmação. `git` só vale para subcomandos
          * somente-leitura ([SAFE_GIT_SUBCOMMANDS]).
+         *
+         * `find` e `env` foram removidos: `find` tem `-delete`/`-exec` e
+         * `env` executa os argumentos como comando.
          */
         val SAFE_COMMANDS: Set<String> = setOf(
-            "ls", "dir", "find", "grep", "egrep", "fgrep", "echo", "cat",
+            "ls", "dir", "grep", "egrep", "fgrep", "echo", "cat",
             "pwd", "head", "tail", "wc", "sort", "uniq", "file", "stat",
-            "tree", "du", "df", "uname", "env", "printenv", "date",
+            "tree", "du", "df", "uname", "printenv", "date",
             "whoami", "hostname", "git"
         )
 
-        /** Subcomandos git somente-leitura liberados na allowlist. */
+        /**
+         * Subcomandos git somente-leitura liberados na allowlist.
+         * `stash` foi removido: sem argumentos ele guarda (muta) o working tree.
+         */
         val SAFE_GIT_SUBCOMMANDS: Set<String> = setOf(
             "status", "diff", "log", "show", "branch", "remote",
-            "rev-parse", "ls-files", "tag", "stash"
+            "rev-parse", "ls-files", "tag"
+        )
+
+        /**
+         * Metacaracteres do shell que tiram o comando da allowlist (exigem
+         * confirmação). O comando roda via `sh -c`, então a dispensa de
+         * confirmação só vale para comandos simples: qualquer um desses
+         * permitiria escapar (ex.: `echo $(rm -rf x)`, `echo oi > Main.kt`,
+         * `grep senha . | xargs rm`, quebra de linha como separador).
+         */
+        private val SHELL_METACHARS = setOf(
+            '|', '>', '<', '$', '`', '\n', '\r', '(', ')', '&', ';', '{', '}', '!', '~'
         )
 
         /** Padrões destrutivos/perigosos — sempre bloqueados. */
         val BLOCKED_PATTERNS: List<Regex> = listOf(
-            Regex("""(?i)(^|[\s;&|])rm\s+.*-[a-z]*r"""), // rm -r / rm -rf
+            Regex("""(?i)(^|[\s;&|/])rm\s+.*-[a-z]*r"""), // rm -r / rm -rf (inclui /bin/rm)
             Regex("""(?i)\bmkfs\b"""),
-            Regex("""(?i)(^|[\s;&|])dd\b"""),
+            Regex("""(?i)(^|[\s;&|/])dd\b"""), // inclui /bin/dd
             Regex("""(?i):\(\)\s*\{"""), // fork-bomb
             Regex("""(?i)\b(shutdown|reboot|poweroff|halt)\b"""),
-            Regex("""(?i)\b(sudo|su)\b"""),
+            Regex("""(?i)(^|[\s;&|/])(sudo|su)\b"""), // como comando; não dentro de texto ("su" em grep)
             Regex("""(?i)>\s*/dev/"""),
             Regex("""(?i)>\s*/(etc|proc|sys|system)/"""),
+            Regex("""(?i)\btee\s+/(dev|proc|sys)/"""), // tee em áreas sensíveis
             Regex("""(?i)\bchmod\s+-R\s+777\s+/"""),
-            Regex("""(?i)\b(wget|curl)\b.*\|\s*(ba)?sh"""), // pipe to shell
+            Regex("""(?i)\b(wget|curl)\b[^|]*\|\s*\S*(sh|bash|python3?|perl|ruby|php)\b"""), // pipe p/ interpretador
             Regex("""(?i)\bformat\b\s+[a-z]:""")
         )
 
@@ -201,19 +223,21 @@ class RunCommandTool : BaseTool(
 
         /** `true` se o comando está na allowlist segura (sem confirmação). */
         fun isAllowlisted(command: String): Boolean {
-            val tokens = command.trim().split(Regex("\\s+"))
+            val trimmed = command.trim()
+            if (trimmed.isEmpty()) return false
+            // Via `sh -c`, metacaracteres permitem escapar do comando simples.
+            if (SHELL_METACHARS.any { it in trimmed }) return false
+            val tokens = trimmed.split(Regex("\\s+"))
             if (tokens.isEmpty()) return false
+            // `..` como segmento de path sai da allowlist (leitura fora do projeto).
+            if (tokens.any { it == ".." || it.startsWith("../") || "/../" in it }) return false
             val first = tokens.first().lowercase().removePrefix("./")
             if (first !in SAFE_COMMANDS) return false
             if (first == "git") {
                 // Exige subcomando somente-leitura explícito.
                 val sub = tokens.getOrNull(1)?.lowercase()?.removePrefix("-") ?: return false
-                // `git --version`, `git status` etc.; bloqueia flags como --exec-path? aceita só a lista.
                 if (sub !in SAFE_GIT_SUBCOMMANDS) return false
             }
-            // Comandos encadeados com && / || / ; herdam a regra do primeiro?
-            // Não: qualquer encadeamento sai da allowlist (força confirmação).
-            if (command.contains("&&") || command.contains("||") || command.contains(";")) return false
             return true
         }
     }

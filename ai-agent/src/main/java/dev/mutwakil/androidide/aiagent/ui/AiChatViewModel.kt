@@ -30,11 +30,13 @@ import dev.mutwakil.androidide.aiagent.agent.PermissionManager
 import dev.mutwakil.androidide.aiagent.model.AgentMode
 import dev.mutwakil.androidide.aiagent.gate.CapabilityGate
 import dev.mutwakil.androidide.aiagent.model.Attachment
+import dev.mutwakil.androidide.aiagent.model.Capability
 import dev.mutwakil.androidide.aiagent.model.ChatMessage
 import dev.mutwakil.androidide.aiagent.model.Role
 import dev.mutwakil.androidide.aiagent.providers.AiProviderPlugin
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +59,11 @@ data class ChatUiState(
   val messages: List<ChatListItem> = emptyList(),
   val isBusy: Boolean = false,
   val activeProvider: AiProviderPlugin? = null,
+  /**
+   * Capabilities of [activeProvider], resolved off the main thread
+   * (reading them touches EncryptedSharedPreferences/keystore).
+   */
+  val capabilities: Set<Capability> = emptySet(),
   val pendingAttachments: List<Attachment> = emptyList(),
   val mode: AgentMode = AgentMode.AGENT
 )
@@ -96,12 +103,31 @@ class AiChatViewModel(
       confirmHandler?.invoke(title, detail) == true
     }
     _uiState.update { it.copy(activeProvider = resolveInitialProvider()) }
+    refreshCapabilities()
   }
 
   /** Switches the active provider for this session (drives capability-gated UI). */
   fun setActiveProvider(plugin: AiProviderPlugin) {
     if (_uiState.value.isBusy) return
     _uiState.update { it.copy(activeProvider = plugin) }
+    refreshCapabilities()
+  }
+
+  /**
+   * Re-resolves the active provider's capabilities off the main thread.
+   * Reading them touches EncryptedSharedPreferences (keystore), so this must
+   * never run per-render — previously it ran on every streamed token.
+   */
+  fun refreshCapabilities() {
+    val plugin = _uiState.value.activeProvider
+    if (plugin == null) {
+      _uiState.update { it.copy(capabilities = emptySet()) }
+      return
+    }
+    viewModelScope.launch(Dispatchers.IO) {
+      val caps = CapabilityUi.resolvedCaps(plugin)
+      _uiState.update { it.copy(capabilities = caps) }
+    }
   }
 
   /** Switches between AGENT (tools enabled) and CHAT (conversation only) modes. */
@@ -131,6 +157,12 @@ class AiChatViewModel(
       return
     }
 
+    // Claim the busy flag synchronously on the caller thread (main), before
+    // the coroutine starts: otherwise a second send can slip through the
+    // isBusy check above while the first coroutine is still starting up,
+    // spawning two engines for a single chat.
+    _uiState.update { it.copy(isBusy = true) }
+
     currentJob = viewModelScope.launch {
       val app = getApplication<Application>()
 
@@ -140,10 +172,12 @@ class AiChatViewModel(
           app.getString(R.string.aiagent_no_provider_configured) + " " +
             app.getString(R.string.aiagent_open_settings)
         )
+        _uiState.update { it.copy(isBusy = false) }
         return@launch
       }
       if (config.providerId != plugin.id) {
         addError(app.getString(R.string.aiagent_no_config_for_provider, plugin.displayName))
+        _uiState.update { it.copy(isBusy = false) }
         return@launch
       }
 
@@ -152,6 +186,7 @@ class AiChatViewModel(
         val missing = CapabilityGate.missingCapability(plugin.resolvedCapabilities(config), attachment)
         if (missing != null) {
           addError(CapabilityGate.unavailableMessage(plugin.displayName, missing))
+          _uiState.update { it.copy(isBusy = false) }
           return@launch
         }
       }
@@ -162,7 +197,6 @@ class AiChatViewModel(
 
       _uiState.update {
         it.copy(
-          isBusy = true,
           pendingAttachments = emptyList(),
           messages = it.messages + ChatListItem.User(trimmed, attachments)
         )

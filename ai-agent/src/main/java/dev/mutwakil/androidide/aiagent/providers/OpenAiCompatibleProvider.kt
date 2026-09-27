@@ -22,6 +22,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.google.gson.JsonParseException
 import com.google.gson.JsonParser
 import dev.mutwakil.androidide.aiagent.gate.CapabilityGate
 import dev.mutwakil.androidide.aiagent.gate.UnsupportedCapabilityException
@@ -36,6 +37,7 @@ import dev.mutwakil.androidide.aiagent.model.ConnectionResult
 import dev.mutwakil.androidide.aiagent.model.ProviderConfig
 import dev.mutwakil.androidide.aiagent.model.Role
 import dev.mutwakil.androidide.aiagent.model.ToolCall
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -371,15 +373,26 @@ class OpenAiCompatibleProvider : AiProviderPlugin {
     // ------------------------------------------------------------------
 
     private fun parseChatResponse(raw: String): ChatResponse {
-        val root = JsonParser.parseString(raw).asJsonObject
+        val root = try {
+            JsonParser.parseString(raw).asJsonObject
+        } catch (e: JsonParseException) {
+            throw IOException("Malformed OpenAI-compatible response: invalid JSON (${e.message})")
+        } catch (e: IllegalStateException) {
+            // CancellationException herda IllegalStateException: nunca engolir cancelamento.
+            if (e is CancellationException) throw e
+            throw IOException("Malformed OpenAI-compatible response: root is not a JSON object")
+        }
         val message = root.getAsJsonArray("choices")
             ?.firstOrNull()?.asJsonObject
             ?.getAsJsonObject("message")
             ?: throw IOException("Malformed response: missing choices[0].message")
         val content = message.optString("content") ?: ""
-        val toolCalls = message.getAsJsonArray("tool_calls")?.map { element ->
+        val toolCalls = message.getAsJsonArray("tool_calls")?.mapNotNull { element ->
             val toolCall = element.asJsonObject
-            val function = toolCall.getAsJsonObject("function")
+            // Some OpenAI-compatible endpoints (Ollama, LM Studio, proxies) may
+            // emit tool_calls without the "function" object; skip those instead
+            // of crashing with an NPE on the platform type.
+            val function = toolCall.getAsJsonObject("function") ?: return@mapNotNull null
             ToolCall(
                 id = toolCall.optString("id") ?: "call_${function.optString("name")}",
                 name = function.optString("name") ?: "unknown",

@@ -17,6 +17,8 @@
 
 package dev.mutwakil.androidide.aiagent.agent
 
+import dev.mutwakil.androidide.aiagent.agent.tools.truncateForTool
+
 /**
  * Resultado da execução de uma [AgentTool].
  *
@@ -33,10 +35,16 @@ data class ToolResult(
         /** Limite de caracteres da saída de qualquer tool (~8k). */
         const val MAX_OUTPUT_LENGTH: Int = 8192
 
-        /** Resultado de sucesso. */
-        fun ok(output: String): ToolResult = ToolResult(true, output)
+        /**
+         * Resultado de sucesso. A saída é truncada em [MAX_OUTPUT_LENGTH]
+         * aqui mesmo, no ponto central — nenhuma tool precisa (nem deve)
+         * truncar por conta própria.
+         */
+        fun ok(output: String): ToolResult =
+            ToolResult(true, output.truncateForTool(MAX_OUTPUT_LENGTH))
 
         /** Resultado de erro esperado (ex.: arquivo não encontrado, permissão negada). */
-        fun error(message: String): ToolResult = ToolResult(false, "Erro: $message")
+        fun error(message: String): ToolResult =
+            ToolResult(false, "Erro: $message".truncateForTool(MAX_OUTPUT_LENGTH))
     }
 }

@@ -276,6 +276,13 @@ class EditFileTool : BaseTool(
                 if (old == null || new == null) {
                     return@guard ToolResult.error("edits[$i] inválido: requer oldText e newText")
                 }
+                if (old.isEmpty()) {
+                    return@guard ToolResult.error(
+                        "edits[$i] inválido: oldText vazio corromperia o arquivo " +
+                            "(\"\".replace inseriria o texto entre cada caractere). " +
+                            "Informe o trecho exato a substituir."
+                    )
+                }
                 edits.add(old to new)
             }
         } else {
@@ -283,6 +290,13 @@ class EditFileTool : BaseTool(
             val new = args.string("newText")
             if (old == null || new == null) {
                 return@guard ToolResult.error("Informe oldText+newText ou o array edits.")
+            }
+            if (old.isEmpty()) {
+                return@guard ToolResult.error(
+                    "oldText vazio corromperia o arquivo " +
+                        "(\"\".replace inseriria o texto entre cada caractere). " +
+                        "Informe o trecho exato a substituir."
+                )
             }
             edits.add(old to new)
         }

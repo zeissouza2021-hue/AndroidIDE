@@ -38,9 +38,12 @@ import dev.mutwakil.androidide.aiagent.model.ToolCall
 import dev.mutwakil.androidide.aiagent.model.ToolDefinition
 import dev.mutwakil.androidide.aiagent.providers.AiProviderPlugin
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -243,16 +246,23 @@ class AgentEngine(
             }
 
             val summary = buildSummary(lastText, modified, actions)
-            history.record(
-                userCommand = userMessage.text,
-                plan = plan,
-                filesModified = modified.toList(),
-                actionsPerformed = actions,
-                result = summary
-            )
+            // I/O de disco: fora da thread do coletor.
+            withContext(Dispatchers.IO) {
+                history.record(
+                    userCommand = userMessage.text,
+                    plan = plan,
+                    filesModified = modified.toList(),
+                    actionsPerformed = actions,
+                    result = summary
+                )
+            }
             send(AgentEvent.Completed(summary))
         } finally {
-            history.closeCurrentSnapshot()
+            // NonCancellable: o fechamento do snapshot precisa acontecer
+            // mesmo se a coroutine foi cancelada.
+            withContext(NonCancellable + Dispatchers.IO) {
+                history.closeCurrentSnapshot()
+            }
         }
     }
 
@@ -616,28 +626,32 @@ class AgentEngine(
         return fallbackProjectDescription()
     }
 
-    private fun fallbackProjectDescription(): String {
+    private suspend fun fallbackProjectDescription(): String {
         return try {
-            val top = projectRoot.listFiles()
-                ?.filter { it.name !in setOf("build", ".git", ".gradle") }
-                ?.take(15)
-                ?.joinToString(", ") { it.name + if (it.isDirectory) "/" else "" }
-                ?: "?"
-            var kt = 0
-            var java = 0
-            var xml = 0
-            projectRoot.walkTopDown()
-                .onEnter { dir -> dir.name != "build" && dir.name != ".git" && dir.name != ".gradle" }
-                .forEach { file ->
-                    if (!file.isFile) return@forEach
-                    when (file.extension.lowercase()) {
-                        "kt", "kts" -> kt++
-                        "java" -> java++
-                        "xml" -> xml++
+            // I/O de disco: fora da thread do coletor.
+            withContext(Dispatchers.IO) {
+                val top = projectRoot.listFiles()
+                    ?.filter { it.name !in setOf("build", ".git", ".gradle") }
+                    ?.take(15)
+                    ?.joinToString(", ") { it.name + if (it.isDirectory) "/" else "" }
+                    ?: "?"
+                var kt = 0
+                var java = 0
+                var xml = 0
+                projectRoot.walkTopDown()
+                    .onEnter { dir -> dir.name != "build" && dir.name != ".git" && dir.name != ".gradle" }
+                    .take(MAX_FALLBACK_SCAN_FILES)
+                    .forEach { file ->
+                        if (!file.isFile) return@forEach
+                        when (file.extension.lowercase()) {
+                            "kt", "kts" -> kt++
+                            "java" -> java++
+                            "xml" -> xml++
+                        }
                     }
-                }
-            "Projeto '${projectRoot.name}' em ${projectRoot.absolutePath}. " +
-                "Topo: [$top]. Aproximadamente: $kt arquivos Kotlin, $java Java, $xml XML."
+                "Projeto '${projectRoot.name}' em ${projectRoot.absolutePath}. " +
+                    "Topo: [$top]. Aproximadamente: $kt arquivos Kotlin, $java Java, $xml XML."
+            }
         } catch (_: Exception) {
             "Projeto em ${projectRoot.absolutePath}."
         }
@@ -678,6 +692,9 @@ class AgentEngine(
     companion object {
         /** Máximo de rodadas de tool-calling na fase IMPLEMENT. */
         const val MAX_TOOL_ROUNDS: Int = 15
+
+        /** Teto de arquivos varridos no levantamento de fallback (evita ANR em projetos grandes). */
+        const val MAX_FALLBACK_SCAN_FILES: Int = 3000
 
         /** Máximo de tentativas de correção após falha de build/teste. */
         const val MAX_FIX_ATTEMPTS: Int = 3

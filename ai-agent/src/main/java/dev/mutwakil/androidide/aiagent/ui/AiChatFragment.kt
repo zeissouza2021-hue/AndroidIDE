@@ -33,6 +33,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
@@ -139,6 +140,12 @@ class AiChatFragment : Fragment() {
     super.onDestroyView()
   }
 
+  override fun onResume() {
+    super.onResume()
+    // Re-resolve capabilities (e.g. after returning from provider settings).
+    viewModel.refreshCapabilities()
+  }
+
   /** Called by the host Activity when the user picks another provider. */
   fun setActiveProvider(plugin: AiProviderPlugin) {
     if (!::viewModel.isInitialized) return
@@ -175,7 +182,18 @@ class AiChatFragment : Fragment() {
     messageList.adapter = messageAdapter
     messageAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
       override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
-        messageList.smoothScrollToPosition(messageAdapter.itemCount - 1)
+        if (itemCount <= 0) return
+        val lastIndex = messageAdapter.itemCount - 1
+        // Never scroll to an invalid position: with an empty adapter this
+        // used to be -1 and crashed the app (IllegalArgumentException).
+        if (lastIndex < 0) return
+        // Only auto-scroll when the user is already at (or near) the bottom,
+        // so reading older messages isn't yanked away mid-scroll.
+        val lm = messageList.layoutManager as? LinearLayoutManager ?: return
+        val lastVisible = lm.findLastCompletelyVisibleItemPosition()
+        if (lastVisible == RecyclerView.NO_POSITION || lastVisible >= lastIndex - 2) {
+          messageList.post { messageList.smoothScrollToPosition(lastIndex) }
+        }
       }
     })
   }
@@ -238,7 +256,8 @@ class AiChatFragment : Fragment() {
     pendingList.isVisible = state.pendingAttachments.isNotEmpty()
 
     // Capability-gated input bar: hide what the provider cannot do.
-    val caps = state.activeProvider?.let { CapabilityUi.resolvedCaps(it) } ?: emptySet()
+    // (caps are resolved off-main-thread in the ViewModel — never per render.)
+    val caps = state.capabilities
     attachImageButton.isVisible = CapabilityUi.supportsImageInput(caps)
     attachFileButton.isVisible = CapabilityUi.supportsFileInput(caps)
     micButton.isVisible = CapabilityUi.supportsVoiceInput(caps)

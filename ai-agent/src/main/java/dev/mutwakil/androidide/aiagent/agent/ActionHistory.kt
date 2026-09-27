@@ -242,6 +242,15 @@ class ActionHistory(
         }
         for (entry in snapshot.entries) {
             val target = File(root, entry.relativePath)
+            // Trava anti path-traversal: o snapshot é persistido em disco e
+            // pode ser adulterado — um "../" aqui escreveria fora do projeto.
+            val canonicalRoot = root.canonicalPath
+            val canonicalTarget = target.canonicalPath
+            if (canonicalTarget != canonicalRoot && !canonicalTarget.startsWith("$canonicalRoot/")) {
+                throw IllegalStateException(
+                    "Snapshot contém caminho fora do projeto: ${entry.relativePath}"
+                )
+            }
             if (entry.existed) {
                 val bytes = blobs[entry.relativePath]
                     ?: throw IllegalStateException("Conteúdo ausente no snapshot para ${entry.relativePath}")
