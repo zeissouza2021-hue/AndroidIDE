@@ -17,6 +17,10 @@
 
 package dev.mutwakil.androidide.aiagent.agent.tools
 
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
+import dev.mutwakil.androidide.aiagent.agent.EditHunk
+import dev.mutwakil.androidide.aiagent.agent.EditReviewRequest
 import dev.mutwakil.androidide.aiagent.agent.ToolContext
 import dev.mutwakil.androidide.aiagent.agent.ToolResult
 import dev.mutwakil.androidide.aiagent.model.ToolDefinition
@@ -219,6 +223,11 @@ class CreateFileTool : BaseTool(
  * Aceita `oldText`/`newText` ou um array `edits` (aplicados em ordem).
  * Falha com erro claro se algum `oldText` não for encontrado.
  * Verificação em duas passadas (atômico: ou aplica tudo ou nada).
+ *
+ * v2: exige confirmação ([requiresConfirmation] = `true`). Quando a UI liga
+ * [dev.mutwakil.androidide.aiagent.agent.PermissionManager.confirmEditDiff],
+ * o usuário revisa o diff por trecho (aplicar tudo / só alguns / descartar);
+ * sem UI ligada, cai no diálogo clássico permitir/negar.
  */
 class EditFileTool : BaseTool(
     definition = ToolDefinition(
@@ -255,8 +264,9 @@ class EditFileTool : BaseTool(
               },
               "required": ["path"]
             }
-        """.trimIndent()
-    )
+        """.trimIndent(),
+    ),
+    requiresConfirmation = true
 ) {
     override suspend fun execute(argsJson: String, ctx: ToolContext): ToolResult = guard(ctx) {
         val args = parseArgs(argsJson)
@@ -329,6 +339,121 @@ class EditFileTool : BaseTool(
         ctx.history.noteFileModified(relativeToRoot(ctx, file))
         ctx.onStatus("Arquivo editado: $path ($replaced edição(ões))")
         ToolResult.ok("Arquivo ${relativeToRoot(ctx, file)} atualizado: $replaced edição(ões) aplicada(s).")
+    }
+
+    /**
+     * Executa apenas os edits nos [indices] (revisão de diff por trecho).
+     * Reaproveita [execute] com os argumentos filtrados, mantendo as mesmas
+     * validações, mensagens de erro, snapshot e histórico (desfazer funciona).
+     */
+    suspend fun executeWithEdits(
+        argsJson: String,
+        indices: Set<Int>,
+        ctx: ToolContext
+    ): ToolResult {
+        val filtered = filteredArgsJson(argsJson, indices)
+            ?: return ToolResult.error("Nenhum trecho selecionado para aplicar.")
+        return execute(filtered, ctx)
+    }
+
+    /**
+     * Monta o [EditReviewRequest] para a UI revisar o diff antes de aplicar.
+     * Retorna null quando os argumentos são inválidos, o arquivo não existe,
+     * escapa da raiz ou é grande demais para revisar (a UI então usa o
+     * diálogo clássico).
+     */
+    suspend fun buildReviewRequest(
+        argsJson: String,
+        projectRoot: File
+    ): EditReviewRequest? {
+        val parsed = parseEditArgs(argsJson) ?: return null
+        if (parsed.edits.isEmpty() || parsed.edits.size > MAX_REVIEW_HUNKS) return null
+        val root = projectRoot.canonicalFile
+        val candidate = File(parsed.path).let { f ->
+            if (f.isAbsolute) f else File(root, f)
+        }.canonicalFile
+        if (candidate != root && !candidate.startsWith(root)) return null
+        if (!candidate.isFile || candidate.length() > MAX_REVIEW_BYTES) return null
+        val original = withContext(Dispatchers.IO) {
+            runCatching { candidate.readText(Charsets.UTF_8) }.getOrNull()
+        } ?: return null
+        if (original.length > MAX_REVIEW_CHARS) return null
+        val hunks = parsed.edits.mapIndexed { index, (old, new) ->
+            val start = original.indexOf(old)
+            val line = if (start == -1) -1
+            else original.substring(0, start).count { it == '\n' } + 1
+            EditHunk(index, old, new, line)
+        }
+        return EditReviewRequest(parsed.path, original, hunks)
+    }
+
+    /** path + lista de (oldText, newText); null quando os argumentos são inválidos. */
+    private fun parseEditArgs(argsJson: String): ParsedEdits? {
+        val args = parseArgs(argsJson)
+        val path = args.string("path")?.takeIf { it.isNotBlank() } ?: return null
+        val edits = mutableListOf<Pair<String, String>>()
+        val array = if (args.has("edits") && args.get("edits").isJsonArray) {
+            args.getAsJsonArray("edits")
+        } else {
+            null
+        }
+        if (array != null) {
+            array.forEach { el ->
+                if (!el.isJsonObject) return null
+                val obj = el.asJsonObject
+                val old = obj.string("oldText") ?: return null
+                val new = obj.string("newText") ?: return null
+                if (old.isEmpty()) return null
+                edits.add(old to new)
+            }
+        } else {
+            val old = args.string("oldText") ?: return null
+            val new = args.string("newText") ?: return null
+            if (old.isEmpty()) return null
+            edits.add(old to new)
+        }
+        if (edits.isEmpty()) return null
+        return ParsedEdits(path, edits, singlePair = array == null)
+    }
+
+    /** Reconstrói o JSON de argumentos contendo só os edits em [indices]. */
+    private fun filteredArgsJson(argsJson: String, indices: Set<Int>): String? {
+        val parsed = parseEditArgs(argsJson) ?: return null
+        val selected = parsed.edits.filterIndexed { i, _ -> i in indices }
+        if (selected.isEmpty()) return null
+        val obj = JsonObject()
+        obj.addProperty("path", parsed.path)
+        if (parsed.singlePair) {
+            obj.addProperty("oldText", selected[0].first)
+            obj.addProperty("newText", selected[0].second)
+        } else {
+            val array = JsonArray()
+            selected.forEach { (old, new) ->
+                val e = JsonObject()
+                e.addProperty("oldText", old)
+                e.addProperty("newText", new)
+                array.add(e)
+            }
+            obj.add("edits", array)
+        }
+        return gson.toJson(obj)
+    }
+
+    private data class ParsedEdits(
+        val path: String,
+        val edits: List<Pair<String, String>>,
+        val singlePair: Boolean,
+    )
+
+    companion object {
+        /** Teto do arquivo para montar a revisão de diff (2 MiB). */
+        const val MAX_REVIEW_BYTES: Long = 2L * 1024 * 1024
+
+        /** Teto de caracteres lidos para localizar os trechos. */
+        const val MAX_REVIEW_CHARS: Int = 200_000
+
+        /** Teto de trechos por revisão; acima disso usa o diálogo clássico. */
+        const val MAX_REVIEW_HUNKS: Int = 50
     }
 }
 
