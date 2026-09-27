@@ -79,4 +79,5 @@
     <string name="ai_chat_v2_provider_fallback_badge">fallback</string>
     <string name="ai_chat_v2_provider_default_badge">padrão</string>
     <string name="ai_chat_v2_provider_new_title">Novo provider</string>
+    <string name="ai_chat_v2_provider_validation">Preencha ao menos nome e modelo.</string>
 </resources>
