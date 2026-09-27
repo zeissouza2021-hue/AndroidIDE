@@ -256,10 +256,11 @@ class AiProviderSettingsActivity : AppCompatActivity() {
       val model = actvModel.text?.toString()?.trim().orEmpty()
       if (name.isBlank() || model.isBlank()) return null
       val checkedCaps = (0 until capsGroup.childCount)
-        .filter { (capsGroup.getChildAt(it) as Chip).isChecked }
+        .map { capsGroup.getChildAt(it) as Chip }
+        .filter { it.isChecked }
         .flatMap { chip ->
           @Suppress("UNCHECKED_CAST")
-          ((chip as Chip).tag as? Set<Capability>).orEmpty()
+          (chip.tag as? Set<Capability>).orEmpty()
         }
         .toSet()
       return ProviderConfig(

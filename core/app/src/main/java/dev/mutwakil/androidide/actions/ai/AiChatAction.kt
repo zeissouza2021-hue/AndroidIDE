@@ -59,7 +59,9 @@ class AiChatAction(context: Context, override val order: Int) : EditorActivityAc
     val opened = runCatching {
       val compat = activity as? AppCompatActivity
         ?: error("Activity não é AppCompatActivity")
-      AiChatV2PanelDialog.toggle(
+      // v3: a janela é flutuante e não-modal. Se já houver uma aberta, o
+      // contexto (arquivo/seleção) é injetado nela; senão, abre uma nova.
+      AiChatV2PanelDialog.openOrFocus(
         compat.supportFragmentManager,
         projectDir.absolutePath,
         filePath,

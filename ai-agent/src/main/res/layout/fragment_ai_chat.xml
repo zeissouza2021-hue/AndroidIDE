@@ -157,6 +157,27 @@
         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
         android:orientation="horizontal" />
 
+    <!-- Ações rápidas sobre o trecho selecionado (v3): aparecem quando há
+         chip de seleção; cada uma envia um prompt pronto com o contexto. -->
+    <HorizontalScrollView
+        android:id="@+id/ai_chat_v2_quick_actions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:clipToPadding="false"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/ai_chat_v2_quick_actions_group"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:chipSpacingHorizontal="8dp"
+            app:singleLine="true" />
+
+    </HorizontalScrollView>
+
     <!-- Contexto automático (chips removíveis) + anexar erro (v2) -->
     <LinearLayout
         android:id="@+id/context_row"

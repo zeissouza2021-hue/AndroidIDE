@@ -96,6 +96,8 @@ class AiChatFragment : Fragment() {
   private lateinit var micButton: MaterialButton
   private lateinit var messageInput: TextInputEditText
   private lateinit var sendButton: MaterialButton
+  private lateinit var quickActionsRow: View
+  private lateinit var quickActionsGroup: ChipGroup
 
   private val pickImageLauncher =
     registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -143,6 +145,7 @@ class AiChatFragment : Fragment() {
     setupInputBar()
     setupVoiceAndAttachments()
     setupContextChips()
+    setupQuickActions()
 
     // Contexto automático v2 (arquivo aberto + seleção) vindo do painel/ação.
     viewModel.setInitialContext(
@@ -210,6 +213,8 @@ class AiChatFragment : Fragment() {
     micButton = view.findViewById(R.id.mic_button)
     messageInput = view.findViewById(R.id.message_input)
     sendButton = view.findViewById(R.id.send_button)
+    quickActionsRow = view.findViewById(R.id.ai_chat_v2_quick_actions)
+    quickActionsGroup = view.findViewById(R.id.ai_chat_v2_quick_actions_group)
   }
 
   private fun setupMessageList() {
@@ -302,6 +307,44 @@ class AiChatFragment : Fragment() {
     attachErrorButton.setOnClickListener { viewModel.addErrorChip() }
   }
 
+  /**
+   * Ações rápidas v3 (Explicar/Corrigir/Refatorar/Otimizar/Documentar):
+   * aparecem quando há um trecho selecionado e enviam um prompt pronto
+   * com o contexto já anexado — sem copiar e colar.
+   */
+  private fun setupQuickActions() {
+    val actions = listOf(
+      R.string.ai_chat_v2_qa_explain to R.string.ai_chat_v2_qa_explain_prompt,
+      R.string.ai_chat_v2_qa_fix to R.string.ai_chat_v2_qa_fix_prompt,
+      R.string.ai_chat_v2_qa_refactor to R.string.ai_chat_v2_qa_refactor_prompt,
+      R.string.ai_chat_v2_qa_optimize to R.string.ai_chat_v2_qa_optimize_prompt,
+      R.string.ai_chat_v2_qa_document to R.string.ai_chat_v2_qa_document_prompt,
+    )
+    actions.forEach { (labelRes, promptRes) ->
+      val chip = Chip(requireContext()).apply {
+        text = getString(labelRes)
+        setEnsureMinTouchTargetSize(false)
+        setOnClickListener { runQuickAction(getString(promptRes)) }
+      }
+      quickActionsGroup.addView(chip)
+    }
+  }
+
+  private fun runQuickAction(prompt: String) {
+    val state = viewModel.uiState.value
+    if (state.isBusy) return
+    viewModel.sendMessage(prompt, state.pendingAttachments)
+  }
+
+  /**
+   * Injeta contexto do editor (arquivo/seleção) numa conversa já aberta —
+   * usado pela janela flutuante quando o usuário chama o chat de novo.
+   */
+  fun injectEditorContext(filePath: String?, selection: String?) {
+    if (!::viewModel.isInitialized) return
+    viewModel.setInitialContext(filePath, selection)
+  }
+
   // ---------------------------------------------------------------------------
   // Rendering
   // ---------------------------------------------------------------------------
@@ -332,6 +375,11 @@ class AiChatFragment : Fragment() {
 
     // Chips de contexto automático (v2).
     renderContextChips(state.chips)
+
+    // Ações rápidas: visíveis quando há trecho selecionado.
+    quickActionsRow.visibility =
+      if (state.chips.any { it.id == AiChatV2Context.CHIP_SELECTION }) View.VISIBLE
+      else View.GONE
 
     // Keep the toggle in sync with the state (e.g. after rotation).
     val checkedId = if (state.mode == AgentMode.CHAT) R.id.mode_button_chat else R.id.mode_button_agent

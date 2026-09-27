@@ -61,6 +61,25 @@
     <string name="ai_chat_v2_diff_hunk_apply">Aplicar este trecho</string>
     <string name="ai_chat_v2_diff_review_waiting">Aguardando sua revisão do diff\u2026</string>
 
+    <!-- Janela flutuante (v3) -->
+    <string name="ai_chat_v2_minimize">Minimizar</string>
+    <string name="ai_chat_v2_maximize">Maximizar</string>
+    <string name="ai_chat_v2_restore">Restaurar tamanho</string>
+    <string name="ai_chat_v2_new_window">Nova janela de chat</string>
+    <string name="ai_chat_v2_resize">Redimensionar</string>
+
+    <!-- Ações rápidas sobre a seleção -->
+    <string name="ai_chat_v2_qa_explain">Explicar</string>
+    <string name="ai_chat_v2_qa_fix">Corrigir</string>
+    <string name="ai_chat_v2_qa_refactor">Refatorar</string>
+    <string name="ai_chat_v2_qa_optimize">Otimizar</string>
+    <string name="ai_chat_v2_qa_document">Documentar</string>
+    <string name="ai_chat_v2_qa_explain_prompt">Explique o código selecionado: o que ele faz, como funciona e pontos de atenção.</string>
+    <string name="ai_chat_v2_qa_fix_prompt">Analise o código selecionado, encontre bugs ou problemas e proponha a correção.</string>
+    <string name="ai_chat_v2_qa_refactor_prompt">Refatore o código selecionado para melhorar legibilidade e manutenibilidade, sem alterar o comportamento.</string>
+    <string name="ai_chat_v2_qa_optimize_prompt">Otimize o código selecionado para melhor desempenho.</string>
+    <string name="ai_chat_v2_qa_document_prompt">Gere documentação (KDoc/Javadoc) para o código selecionado.</string>
+
     <!-- Cadastro de providers -->
     <string name="ai_chat_v2_provider_add">Adicionar provider</string>
     <string name="ai_chat_v2_provider_name">Nome do provider</string>
