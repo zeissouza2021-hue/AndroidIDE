@@ -58,7 +58,7 @@ fun ideColorScheme(
     ): Color = resolve(attr) ?: fallback
 
     return base.copy(
-        primary = role(MaterialR.attr.colorPrimary, base.primary),
+        primary = role(R.attr.colorPrimary, base.primary),
         onPrimary = role(MaterialR.attr.colorOnPrimary, base.onPrimary),
         primaryContainer = role(MaterialR.attr.colorPrimaryContainer, base.primaryContainer),
         onPrimaryContainer = role(MaterialR.attr.colorOnPrimaryContainer, base.onPrimaryContainer),
@@ -79,7 +79,7 @@ fun ideColorScheme(
         onSurfaceVariant = role(MaterialR.attr.colorOnSurfaceVariant, base.onSurfaceVariant),
         outline = role(MaterialR.attr.colorOutline, base.outline),
         outlineVariant = role(MaterialR.attr.colorOutlineVariant, base.outlineVariant),
-        error = role(MaterialR.attr.colorError, base.error),
+        error = role(R.attr.colorError, base.error),
         onError = role(MaterialR.attr.colorOnError, base.onError),
         errorContainer = role(MaterialR.attr.colorErrorContainer, base.errorContainer),
         onErrorContainer = role(MaterialR.attr.colorOnErrorContainer, base.onErrorContainer),
