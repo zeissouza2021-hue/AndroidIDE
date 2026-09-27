@@ -22,6 +22,7 @@
     <string name="ai_chat_v2_title">AI Chat</string>
     <string name="ai_chat_v2_close">Fechar painel</string>
     <string name="ai_chat_v2_model_label">Modelo</string>
+    <string name="ai_chat_v2_model_add_api_hint">＋ Toque para adicionar uma API</string>
 
     <!-- Abas Perguntar/Agente -->
     <string name="ai_chat_v2_tab_ask">Perguntar</string>
@@ -78,6 +79,7 @@
     <string name="ai_chat_v2_provider_saved">Provider salvo.</string>
     <string name="ai_chat_v2_provider_fallback_badge">fallback</string>
     <string name="ai_chat_v2_provider_default_badge">padrão</string>
+    <string name="ai_chat_v2_provider_advanced">Opções avançadas</string>
     <string name="ai_chat_v2_provider_new_title">Novo provider</string>
     <string name="ai_chat_v2_provider_validation">Preencha ao menos nome e modelo.</string>
 </resources>

@@ -269,7 +269,7 @@
                             android:layout_width="40dp"
                             android:layout_height="40dp"
                             android:background="@drawable/rounded_background"
-                            android:backgroundTint="#FF6200EE" />
+                            android:backgroundTint="?attr/colorPrimary" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/color_picker_button"

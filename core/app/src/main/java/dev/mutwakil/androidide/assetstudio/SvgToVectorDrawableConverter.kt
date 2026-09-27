@@ -52,6 +52,10 @@ object SvgToVectorDrawableConverter {
     val paths = mutableListOf<String>()
     var foundSvg = false
     var defaultFill = "#FF000000"
+    // v2.1: pilha de atributos de apresentação herdados dos <g> ancestrais.
+    // A maioria dos SVGs reais define fill/stroke nos grupos (ou via style="..."),
+    // e o conversor antigo ignorava os dois — tudo saía preto.
+    val groupStack = ArrayDeque<Map<String, String>>()
 
     var eventType = parser.eventType
     while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -80,24 +84,39 @@ object SvgToVectorDrawableConverter {
             parser.getAttributeValue(null, "height")?.let {
               parseLength(it)?.let { h -> heightDp = h.toInt().coerceAtLeast(1) }
             }
-            parser.getAttributeValue(null, "fill")?.let { defaultFill = it }
+            val rootStyle = presentationMap(parser)
+            rootStyle["fill"]?.let { defaultFill = it }
           }
+          "g" -> groupStack.addLast(presentationMap(parser))
           "path" -> {
             val d = parser.getAttributeValue(null, "d")
             if (!d.isNullOrBlank()) {
-              paths += buildPathXml(d, parser, defaultFill)
+              paths += buildPathXml(d, presentationMap(parser), groupStack, defaultFill)
             }
           }
-          "rect" -> rectToPathData(parser)?.let { paths += buildPathXml(it, parser, defaultFill) }
-          "circle" -> circleToPathData(parser)?.let { paths += buildPathXml(it, parser, defaultFill) }
+          "rect" ->
+            rectToPathData(parser)?.let {
+              paths += buildPathXml(it, presentationMap(parser), groupStack, defaultFill)
+            }
+          "circle" ->
+            circleToPathData(parser)?.let {
+              paths += buildPathXml(it, presentationMap(parser), groupStack, defaultFill)
+            }
           "ellipse" ->
-            ellipseToPathData(parser)?.let { paths += buildPathXml(it, parser, defaultFill) }
-          "line" -> lineToPathData(parser)?.let { paths += buildPathXml(it, parser, defaultFill) }
+            ellipseToPathData(parser)?.let {
+              paths += buildPathXml(it, presentationMap(parser), groupStack, defaultFill)
+            }
+          "line" ->
+            lineToPathData(parser)?.let {
+              paths += buildPathXml(it, presentationMap(parser), groupStack, defaultFill)
+            }
           "polyline", "polygon" ->
             pointsToPathData(parser, parser.name == "polygon")?.let {
-              paths += buildPathXml(it, parser, defaultFill)
+              paths += buildPathXml(it, presentationMap(parser), groupStack, defaultFill)
             }
         }
+      } else if (eventType == XmlPullParser.END_TAG && parser.name == "g") {
+        if (groupStack.isNotEmpty()) groupStack.removeLast()
       }
       eventType = parser.next()
     }
@@ -125,14 +144,65 @@ object SvgToVectorDrawableConverter {
     return ConversionResult(vectorXml, widthDp, heightDp)
   }
 
-  private fun buildPathXml(pathData: String, parser: XmlPullParser, defaultFill: String): String {
-    val fill = parser.getAttributeValue(null, "fill") ?: defaultFill
-    val fillOpacity = parser.getAttributeValue(null, "fill-opacity")?.toFloatOrNull()
-    val stroke = parser.getAttributeValue(null, "stroke")
-    val strokeWidth = parser.getAttributeValue(null, "stroke-width")?.toFloatOrNull()
-    val strokeOpacity = parser.getAttributeValue(null, "stroke-opacity")?.toFloatOrNull()
-    val opacity = parser.getAttributeValue(null, "opacity")?.toFloatOrNull()
-    val fillRule = parser.getAttributeValue(null, "fill-rule")
+  /**
+   * Atributos de apresentação de um elemento: mescla o atributo `style`
+   * (ex.: `style="fill:#f00;stroke:none"`, comum em SVGs exportados por
+   * ferramentas) com os atributos de apresentação do XML. O atributo XML
+   * tem precedência sobre o `style`, como na spec.
+   */
+  private fun presentationMap(parser: XmlPullParser): Map<String, String> {
+    val map = mutableMapOf<String, String>()
+    parser.getAttributeValue(null, "style")?.let { map.putAll(parseStyle(it)) }
+    for (i in 0 until parser.attributeCount) {
+      val name = parser.getAttributeName(i)
+      if (!name.equals("style", ignoreCase = true)) {
+        map[name] = parser.getAttributeValue(i)
+      }
+    }
+    return map
+  }
+
+  private fun parseStyle(style: String): Map<String, String> =
+    style
+      .split(";")
+      .mapNotNull {
+        val idx = it.indexOf(':')
+        if (idx <= 0) null
+        else it.substring(0, idx).trim().lowercase() to it.substring(idx + 1).trim()
+      }
+      .toMap()
+
+  private fun buildPathXml(
+    pathData: String,
+    element: Map<String, String>,
+    groups: ArrayDeque<Map<String, String>>,
+    defaultFill: String
+  ): String {
+    /** Primeiro valor não-nulo: elemento, depois <g> do mais interno ao mais externo. */
+    fun inherited(name: String): String? {
+      element[name]?.let { return it }
+      for (i in groups.size - 1 downTo 0) {
+        groups[i][name]?.let { return it }
+      }
+      return null
+    }
+    /** Opacidades se multiplicam ao longo da árvore (spec SVG). */
+    fun inheritedOpacity(name: String): Float? {
+      var result: Float? = null
+      for (i in 0 until groups.size) {
+        groups[i][name]?.toFloatOrNull()?.let { result = (result ?: 1f) * it }
+      }
+      element[name]?.toFloatOrNull()?.let { result = (result ?: 1f) * it }
+      return result
+    }
+
+    val fill = inherited("fill") ?: defaultFill
+    val fillOpacity = inheritedOpacity("fill-opacity")
+    val stroke = inherited("stroke")
+    val strokeWidth = inherited("stroke-width")?.toFloatOrNull()
+    val strokeOpacity = inheritedOpacity("stroke-opacity")
+    val opacity = inheritedOpacity("opacity")
+    val fillRule = inherited("fill-rule")
 
     val sb = StringBuilder()
     sb.append("    <path\n")

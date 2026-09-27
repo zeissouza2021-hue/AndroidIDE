@@ -30,15 +30,15 @@
         android:layout_height="wrap_content"
         android:layout_marginEnd="56dp"
         app:cardBackgroundColor="?attr/colorSurfaceVariant"
-        app:cardCornerRadius="16dp"
+        app:cardCornerRadius="12dp"
         app:cardElevation="0dp">
 
         <TextView
             android:id="@+id/message_text"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:padding="12dp"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
+            android:padding="10dp"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorOnSurfaceVariant" />
     </com.google.android.material.card.MaterialCardView>
 </LinearLayout>

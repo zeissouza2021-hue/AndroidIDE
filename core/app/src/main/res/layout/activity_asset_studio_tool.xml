@@ -177,7 +177,7 @@
                         android:layout_width="32dp"
                         android:layout_height="32dp"
                         android:layout_marginStart="12dp"
-                        android:background="#FF6200EE" />
+                        android:background="?attr/colorPrimary" />
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:layout_width="0dp"

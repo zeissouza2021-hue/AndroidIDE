@@ -123,7 +123,7 @@ class AiChatViewModel(
 
   init {
     AiAgent.init(application)
-    AiChatV2Providers.ensureDefaults()
+    AiChatV2Providers.ensureValidState()
     permissions.confirmCallback = { title, detail ->
       confirmHandler?.invoke(title, detail) == true
     }

@@ -18,6 +18,7 @@
 package dev.mutwakil.androidide.aiagent.ui
 
 import android.app.Dialog
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
@@ -133,8 +134,44 @@ class AiChatV2PanelDialog : DialogFragment() {
         selector: AutoCompleteTextView,
         chatFragment: AiChatFragment
     ) {
-        AiChatV2Providers.ensureDefaults()
+        AiChatV2Providers.ensureValidState()
         val entries = AiChatV2Providers.listConfigs()
+        if (entries.isEmpty()) {
+            // v2.1: sem nenhuma API, o seletor vira um atalho para adicionar.
+            selector.setText(
+                getString(R.string.ai_chat_v2_model_add_api_hint), false
+            )
+            selector.setOnClickListener {
+                startActivity(
+                    Intent(requireContext(), AiProviderSettingsActivity::class.java)
+                )
+            }
+            // Quando voltar da tela de providers com algo criado, monta o
+            // seletor normal uma única vez e já seleciona a primeira entrada.
+            var bound = false
+            viewLifecycleOwner.lifecycleScope.launch {
+                viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                    val now = AiChatV2Providers.listConfigs()
+                    if (now.isNotEmpty() && !bound) {
+                        bound = true
+                        selector.setOnClickListener(null)
+                        bindSelectorEntries(selector, chatFragment, now)
+                        if (chatFragment.viewModel.uiState.value.activeConfigId == null) {
+                            chatFragment.setActiveConfig(now.first().configId)
+                        }
+                    }
+                }
+            }
+            return
+        }
+        bindSelectorEntries(selector, chatFragment, entries)
+    }
+
+    private fun bindSelectorEntries(
+        selector: AutoCompleteTextView,
+        chatFragment: AiChatFragment,
+        entries: List<ProviderConfig>
+    ) {
         val options = entries.map { ModelOption(it) }
         selector.setAdapter(
             ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, options)

@@ -27,7 +27,7 @@
     <!-- AI chat UI (front-c) -->
     <string name="aiagent_provider">Provider</string>
     <string name="aiagent_close">Close</string>
-    <string name="aiagent_no_providers">No AI providers registered.</string>
+    <string name="aiagent_no_providers">Nenhuma API configurada.\nToque em + para adicionar a sua (qualquer API: nome, protocolo, chave e modelo).</string>
     <string name="aiagent_no_config_for_provider">Provider %1$s has no configuration. Open the AI provider settings to configure it.</string>
     <string name="aiagent_open_settings">Open settings</string>
     <string name="aiagent_provider_switched">Switched to %1$s</string>

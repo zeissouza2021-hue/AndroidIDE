@@ -22,8 +22,10 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
+import android.widget.ImageView
 import android.widget.RadioButton
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -96,7 +98,7 @@ class AiProviderSettingsActivity : AppCompatActivity() {
   }
 
   private fun refresh() {
-    AiChatV2Providers.ensureDefaults()
+    AiChatV2Providers.ensureValidState()
     val configs = AiChatV2Providers.listConfigs()
     val store = AiAgent.configStore()
     if (store.getActiveConfigId() == null && configs.isNotEmpty()) {
@@ -108,14 +110,6 @@ class AiProviderSettingsActivity : AppCompatActivity() {
   }
 
   private fun confirmDelete(config: ProviderConfig) {
-    if (config.isDefault) {
-      Snackbar.make(
-        findViewById(R.id.aiagent_provider_list),
-        R.string.ai_chat_v2_provider_cannot_delete_default,
-        Snackbar.LENGTH_LONG
-      ).show()
-      return
-    }
     MaterialAlertDialogBuilder(this)
       .setTitle(R.string.ai_chat_v2_provider_delete_title)
       .setMessage(getString(R.string.ai_chat_v2_provider_delete_confirm, config.displayName))
@@ -156,6 +150,20 @@ class AiProviderSettingsActivity : AppCompatActivity() {
     val btnCapsDefault = view.findViewById<MaterialButton>(R.id.ai_chat_v2_btn_caps_default)
     val btnTest = view.findViewById<MaterialButton>(R.id.ai_chat_v2_btn_test)
     val tvResult = view.findViewById<TextView>(R.id.ai_chat_v2_tv_test_result)
+
+    // v2.1: seção "avançado" recolhível — o diálogo fica compacto e o botão
+    // salvar nunca some da tela.
+    val advancedHeader = view.findViewById<View>(R.id.ai_chat_v2_advanced_header)
+    val advancedBody = view.findViewById<View>(R.id.ai_chat_v2_advanced_body)
+    val advancedChevron = view.findViewById<ImageView>(R.id.ai_chat_v2_advanced_chevron)
+    var advancedExpanded = false
+    fun setAdvancedExpanded(expanded: Boolean) {
+      advancedExpanded = expanded
+      advancedBody.isVisible = expanded
+      advancedChevron.animate().rotation(if (expanded) 180f else 0f)
+        .setDuration(150).start()
+    }
+    advancedHeader.setOnClickListener { setAdvancedExpanded(!advancedExpanded) }
 
     val protocolNames = protocols.map { it.displayName }
     val protocolIds = protocols.map { it.id }
@@ -267,7 +275,7 @@ class AiProviderSettingsActivity : AppCompatActivity() {
         model = model,
         useAsFallback = switchFallback.isChecked,
         capabilityOverrides = if (capsTouched) checkedCaps else capsOverride,
-        isDefault = existing?.isDefault ?: false
+        isDefault = false
       )
     }
 
@@ -301,7 +309,7 @@ class AiProviderSettingsActivity : AppCompatActivity() {
       }
     }
 
-    MaterialAlertDialogBuilder(this)
+    val dialog = MaterialAlertDialogBuilder(this)
       .setTitle(
         existing?.displayName ?: getString(R.string.ai_chat_v2_provider_new_title)
       )
@@ -309,28 +317,32 @@ class AiProviderSettingsActivity : AppCompatActivity() {
       .setPositiveButton(R.string.aiagent_config_save, null)
       .setNegativeButton(R.string.aiagent_config_cancel, null)
       .create()
-      .also { dialog ->
-        dialog.setOnShowListener {
-          dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            .setOnClickListener {
-              val config = collectConfig()
-              if (config == null) {
-                tvResult.isVisible = true
-                tvResult.setText(R.string.ai_chat_v2_provider_validation)
-                return@setOnClickListener
-              }
-              AiAgent.configStore().saveProviderConfig(config)
-              Snackbar.make(
-                findViewById(R.id.aiagent_provider_list),
-                R.string.ai_chat_v2_provider_saved,
-                Snackbar.LENGTH_SHORT
-              ).show()
-              dialog.dismiss()
-              refresh()
-            }
+    dialog.setOnShowListener {
+      dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        .setOnClickListener {
+          val config = collectConfig()
+          if (config == null) {
+            // A mensagem de validação fica na seção avançado: abre para ela
+            // nunca ficar escondida.
+            setAdvancedExpanded(true)
+            tvResult.isVisible = true
+            tvResult.setText(R.string.ai_chat_v2_provider_validation)
+            return@setOnClickListener
+          }
+          AiAgent.configStore().saveProviderConfig(config)
+          Snackbar.make(
+            findViewById(R.id.aiagent_provider_list),
+            R.string.ai_chat_v2_provider_saved,
+            Snackbar.LENGTH_SHORT
+          ).show()
+          dialog.dismiss()
+          refresh()
         }
-      }
-      .show()
+    }
+    // v2.1: com o teclado aberto o botão salvar continuava escondido;
+    // redimensiona o diálogo em vez de cobrir.
+    dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+    dialog.show()
   }
 
   private inner class ProviderAdapter(
@@ -363,8 +375,6 @@ class AiProviderSettingsActivity : AppCompatActivity() {
       private val name: TextView = view.findViewById(R.id.aiagent_provider_name)
       private val model: TextView = view.findViewById(R.id.aiagent_provider_model)
       private val protocol: TextView = view.findViewById(R.id.ai_chat_v2_provider_protocol)
-      private val defaultBadge: TextView =
-        view.findViewById(R.id.ai_chat_v2_provider_default_badge)
       private val chips: ChipGroup = view.findViewById(R.id.aiagent_capability_chips)
       private val deleteButton: MaterialButton =
         view.findViewById(R.id.ai_chat_v2_delete_button)
@@ -376,7 +386,6 @@ class AiProviderSettingsActivity : AppCompatActivity() {
         model.text = config.model.takeIf { it.isNotBlank() }
           ?: itemView.context.getString(R.string.aiagent_provider_not_configured)
         protocol.text = plugin?.displayName ?: config.providerId
-        defaultBadge.isVisible = config.isDefault
 
         radio.setOnCheckedChangeListener(null)
         radio.isChecked = store.getActiveConfigId() == config.configId
@@ -396,7 +405,6 @@ class AiProviderSettingsActivity : AppCompatActivity() {
             )
           }
 
-        deleteButton.isVisible = !config.isDefault
         deleteButton.setOnClickListener { onDelete(config) }
 
         itemView.setOnClickListener { onEdit(config) }

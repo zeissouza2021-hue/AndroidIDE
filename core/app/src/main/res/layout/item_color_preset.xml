@@ -23,7 +23,7 @@
     android:layout_height="48dp"
     android:layout_margin="4dp"
     android:background="@drawable/rounded_background"
-    android:backgroundTint="#FF6200EE"
+    android:backgroundTint="?attr/colorPrimary"
     android:insetTop="0dp"
     android:insetBottom="0dp"
     android:insetLeft="0dp"

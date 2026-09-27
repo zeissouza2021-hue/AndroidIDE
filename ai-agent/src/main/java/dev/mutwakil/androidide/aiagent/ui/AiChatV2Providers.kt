@@ -23,13 +23,13 @@ import dev.mutwakil.androidide.aiagent.providers.AiProviderPlugin
 import java.util.UUID
 
 /**
- * Helpers around the v2 provider-entry model (default + user-created entries).
+ * Helpers around the v2 provider-entry model.
  *
- * A custom entry is a [ProviderConfig] whose [ProviderConfig.providerId] points
- * at the protocol plugin it speaks ("openai-compatible", "anthropic",
- * "gemini") and whose [ProviderConfig.configId] is a unique `custom-*` id.
- * The protocol plugin itself executes the requests, so no dynamic plugin
- * registration is needed.
+ * v2.1: o sistema é 100% genérico. Nenhuma entrada é criada pelo código —
+ * o usuário adiciona "uma API" (nome livre + protocolo + endpoint + chave +
+ * modelo) e tudo é editável, renomeável e apagável. Os protocolos
+ * ("openai-compatible", "anthropic", "gemini") continuam existindo no código
+ * porque são o formato da conversa HTTP com cada API, não modelos fixos.
  */
 object AiChatV2Providers {
 
@@ -40,30 +40,26 @@ object AiChatV2Providers {
     fun newCustomId(): String = CUSTOM_ID_PREFIX + UUID.randomUUID().toString()
 
     /**
-     * Seeds one editable default entry per registered protocol plugin, and
-     * picks an active entry when none is selected. Idempotent; safe to call
-     * on every UI entry point.
+     * Garante um estado válido sem criar nada: migra entradas legadas
+     * semeadas como `isDefault` para entradas normais (editáveis/apagáveis)
+     * e limpa o id ativo quando ele aponta para uma entrada que não existe
+     * mais. Idempotente; seguro chamar em todo ponto de entrada da UI.
      *
-     * Requires [AiAgent.init] to have run and the protocol plugins to be
-     * registered already.
+     * Requires [AiAgent.init] to have run already.
      */
-    fun ensureDefaults() {
+    fun ensureValidState() {
         val store = runCatching { AiAgent.configStore() }.getOrNull() ?: return
-        val registry = AiAgent.registry()
-        registry.all().forEach { plugin ->
-            if (store.getProviderConfig(plugin.id) == null) {
-                store.saveProviderConfig(
-                    ProviderConfig(
-                        providerId = plugin.id,
-                        configId = plugin.id,
-                        displayName = plugin.displayName,
-                        isDefault = true,
-                    )
-                )
-            }
-        }
-        if (store.getActiveConfigId() == null) {
-            registry.all().firstOrNull()?.let { store.setActiveConfigId(it.id) }
+        // Migração v2.1: entradas "padrão" das versões antigas viram
+        // entradas comuns — nada é fixo ou indeletável.
+        store.listConfiguredIds()
+            .mapNotNull { store.getProviderConfig(it) }
+            .filter { it.isDefault }
+            .forEach { store.saveProviderConfig(it.copy(isDefault = false)) }
+        val activeId = store.getActiveConfigId()
+        if (activeId != null && store.getProviderConfig(activeId) == null) {
+            val first = store.listConfiguredIds().firstOrNull()
+            if (first != null) store.setActiveConfigId(first)
+            else store.setActiveConfigId(null)
         }
     }
 
@@ -79,19 +75,18 @@ object AiChatV2Providers {
     }
 
     /**
-     * All saved entries (defaults + customs) in a stable order:
-     * defaults first, then customs, alphabetical by display name.
+     * All saved entries in a stable order: alphabetical by display name.
      */
     fun listConfigs(): List<ProviderConfig> {
         val store = runCatching { AiAgent.configStore() }.getOrNull() ?: return emptyList()
         return store.listConfiguredIds()
             .mapNotNull { store.getProviderConfig(it) }
-            .sortedWith(compareBy({ !it.isDefault }, { it.displayName.lowercase() }))
+            .sortedWith(compareBy({ it.displayName.lowercase() }))
     }
 
-    /** The default entry for a protocol plugin id, if one exists. */
-    fun defaultConfigFor(providerId: String): ProviderConfig? {
-        val store = runCatching { AiAgent.configStore() }.getOrNull() ?: return null
-        return store.getProviderConfig(providerId)?.takeIf { it.isDefault }
-    }
+    /**
+     * Legado: antes da v2.1 existiam entradas "padrão" semeadas pelo código.
+     * Hoje nada é padrão; retorna null.
+     */
+    fun defaultConfigFor(providerId: String): ProviderConfig? = null
 }
