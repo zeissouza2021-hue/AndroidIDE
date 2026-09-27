@@ -21,7 +21,20 @@ package dev.mutwakil.androidide.aiagent.model
  * User-editable configuration for one provider instance (e.g. "my OpenAI key",
  * "local Ollama"). Persisted by [dev.mutwakil.androidide.aiagent.store.ProviderConfigStore].
  *
- * @param providerId id of the [dev.mutwakil.androidide.aiagent.providers.AiProviderPlugin] this config belongs to.
+ * v2: a config is now an *entry* identified by [configId]. The three built-in
+ * providers ship as default entries ([isDefault], `configId == providerId`);
+ * users can also create custom entries whose [providerId] points at the
+ * protocol plugin ("openai-compatible", "anthropic" or "gemini") they speak.
+ *
+ * @param providerId id of the [dev.mutwakil.androidide.aiagent.providers.AiProviderPlugin]
+ *   (protocol) this config belongs to.
+ * @param configId unique id of this entry; defaults to [providerId] so entries
+ *   stored before v2 keep resolving.
+ * @param useAsFallback when true, this entry is eligible for automatic
+ *   fallback after rate-limit/overload/context errors.
+ * @param capabilityOverrides when non-null, replaces the capabilities resolved
+ *   from the protocol plugin for this entry.
+ * @param isDefault true for the built-in seeded entries (editable, not deletable).
  * @param extraHeaders additional HTTP headers sent with every request.
  */
 data class ProviderConfig(
@@ -31,6 +44,10 @@ data class ProviderConfig(
     val endpoint: String? = null,
     val model: String = "",
     val extraHeaders: Map<String, String> = emptyMap(),
+    val configId: String = providerId,
+    val useAsFallback: Boolean = true,
+    val capabilityOverrides: Set<Capability>? = null,
+    val isDefault: Boolean = false,
 )
 
 /** Result of [dev.mutwakil.androidide.aiagent.providers.AiProviderPlugin.testConnection]. */

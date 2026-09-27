@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  AndroidIDE is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidIDE is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<!-- Strings do chat IA v2 (painel flutuante). Não editar strings.xml compartilhado. -->
+<resources>
+    <!-- Painel flutuante -->
+    <string name="ai_chat_v2_title">AI Chat</string>
+    <string name="ai_chat_v2_close">Fechar painel</string>
+    <string name="ai_chat_v2_model_label">Modelo</string>
+
+    <!-- Abas Perguntar/Agente -->
+    <string name="ai_chat_v2_tab_ask">Perguntar</string>
+    <string name="ai_chat_v2_tab_agent">Agente</string>
+
+    <!-- Contexto automático -->
+    <string name="ai_chat_v2_attach_error">Erro</string>
+    <string name="ai_chat_v2_attach_error_cd">Anexar erro do build</string>
+    <string name="ai_chat_v2_no_build_logs">Sem logs de build para anexar.</string>
+    <string name="ai_chat_v2_chip_file">Arquivo: %1$s</string>
+    <string name="ai_chat_v2_chip_selection">Seleção em %1$s</string>
+    <string name="ai_chat_v2_chip_build_error">Erro de build</string>
+    <string name="ai_chat_v2_remove_chip">Remover</string>
+    <string name="ai_chat_v2_attach_video">Anexar vídeo</string>
+
+    <!-- Anexo consciente da capacidade -->
+    <string name="ai_chat_v2_attach_blocked">%1$s não suporta %2$s neste modelo.</string>
+
+    <!-- Fallback automático -->
+    <string name="ai_chat_v2_fallback_switched">Troquei para %1$s (%2$s). Tentando de novo\u2026</string>
+    <string name="ai_chat_v2_fallback_reason_rate_limit">limite de requisições atingido</string>
+    <string name="ai_chat_v2_fallback_reason_overloaded">provedor sobrecarregado</string>
+    <string name="ai_chat_v2_fallback_reason_context">contexto excedido</string>
+
+    <!-- Revisão de diff -->
+    <string name="ai_chat_v2_diff_title">Revisar mudança</string>
+    <string name="ai_chat_v2_diff_apply_all">Aplicar tudo</string>
+    <string name="ai_chat_v2_diff_apply_selected">Aplicar selecionados</string>
+    <string name="ai_chat_v2_diff_discard">Descartar</string>
+    <string name="ai_chat_v2_diff_applied">Mudança aplicada.</string>
+    <string name="ai_chat_v2_diff_partially_applied">Trechos selecionados aplicados.</string>
+    <string name="ai_chat_v2_diff_discarded">Mudança descartada.</string>
+    <string name="ai_chat_v2_diff_hunk_title">Trecho %1$d \u00b7 linha %2$d</string>
+    <string name="ai_chat_v2_diff_hunk_not_found">Trecho %1$d \u00b7 texto original não encontrado (a aplicação vai falhar)</string>
+    <string name="ai_chat_v2_diff_hunk_apply">Aplicar este trecho</string>
+    <string name="ai_chat_v2_diff_review_waiting">Aguardando sua revisão do diff\u2026</string>
+
+    <!-- Cadastro de providers -->
+    <string name="ai_chat_v2_provider_add">Adicionar provider</string>
+    <string name="ai_chat_v2_provider_name">Nome do provider</string>
+    <string name="ai_chat_v2_provider_protocol">Protocolo</string>
+    <string name="ai_chat_v2_provider_use_fallback">Usar como fallback automático</string>
+    <string name="ai_chat_v2_provider_capabilities">Capacidades personalizadas</string>
+    <string name="ai_chat_v2_provider_edit_caps">Escolher capacidades</string>
+    <string name="ai_chat_v2_provider_caps_default">Padrão do protocolo</string>
+    <string name="ai_chat_v2_provider_caps_custom">%1$d selecionadas</string>
+    <string name="ai_chat_v2_provider_caps_use_default">Usar padrão</string>
+    <string name="ai_chat_v2_provider_delete">Excluir</string>
+    <string name="ai_chat_v2_provider_delete_title">Excluir provider</string>
+    <string name="ai_chat_v2_provider_delete_confirm">Excluir \u201c%1$s\u201d? Essa ação não pode ser desfeita.</string>
+    <string name="ai_chat_v2_provider_cannot_delete_default">Providers padrão não podem ser excluídos.</string>
+    <string name="ai_chat_v2_provider_deleted">Provider excluído.</string>
+    <string name="ai_chat_v2_provider_saved">Provider salvo.</string>
+    <string name="ai_chat_v2_provider_fallback_badge">fallback</string>
+    <string name="ai_chat_v2_provider_default_badge">padrão</string>
+    <string name="ai_chat_v2_provider_new_title">Novo provider</string>
+</resources>
