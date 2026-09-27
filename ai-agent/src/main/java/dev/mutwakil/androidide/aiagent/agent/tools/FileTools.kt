@@ -370,7 +370,7 @@ class EditFileTool : BaseTool(
         if (parsed.edits.isEmpty() || parsed.edits.size > MAX_REVIEW_HUNKS) return null
         val root = projectRoot.canonicalFile
         val candidate = File(parsed.path).let { f ->
-            if (f.isAbsolute) f else File(root, f)
+            if (f.isAbsolute) f else File(root, f.path)
         }.canonicalFile
         if (candidate != root && !candidate.startsWith(root)) return null
         if (!candidate.isFile || candidate.length() > MAX_REVIEW_BYTES) return null
