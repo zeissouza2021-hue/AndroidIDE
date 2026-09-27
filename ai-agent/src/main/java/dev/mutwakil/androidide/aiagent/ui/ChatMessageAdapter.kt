@@ -20,13 +20,16 @@ package dev.mutwakil.androidide.aiagent.ui
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import dev.mutwakil.androidide.aiagent.R
+import dev.mutwakil.androidide.aiagent.agent.EditReviewDecision
 import dev.mutwakil.androidide.aiagent.model.Attachment
 
 private const val VIEW_TYPE_USER = 0
@@ -35,13 +38,19 @@ private const val VIEW_TYPE_STATUS = 2
 private const val VIEW_TYPE_PLAN = 3
 private const val VIEW_TYPE_TOOL = 4
 private const val VIEW_TYPE_ERROR = 5
+private const val VIEW_TYPE_DIFF = 6
 
 /**
  * RecyclerView adapter for the chat message list. One view type per
  * [ChatListItem] subtype; colors come from the app theme (`?attr/`) so the
  * chat follows light/dark mode automatically.
+ *
+ * @param onDiffDecision invoked when the user decides on a diff-review card:
+ *   the card id and the decision (apply all / some / discard).
  */
-class ChatMessageAdapter :
+class ChatMessageAdapter(
+  private val onDiffDecision: (id: String, decision: EditReviewDecision) -> Unit = { _, _ -> }
+) :
   ListAdapter<ChatListItem, RecyclerView.ViewHolder>(ChatDiffCallback()) {
 
   override fun getItemViewType(position: Int): Int =
@@ -52,6 +61,7 @@ class ChatMessageAdapter :
       is ChatListItem.PlanItem -> VIEW_TYPE_PLAN
       is ChatListItem.ToolEvent -> VIEW_TYPE_TOOL
       is ChatListItem.Error -> VIEW_TYPE_ERROR
+      is ChatListItem.DiffProposal -> VIEW_TYPE_DIFF
     }
 
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -75,6 +85,10 @@ class ChatMessageAdapter :
       VIEW_TYPE_ERROR -> ErrorViewHolder(
         inflater.inflate(R.layout.item_ai_chat_error, parent, false)
       )
+      VIEW_TYPE_DIFF -> DiffViewHolder(
+        inflater.inflate(R.layout.item_ai_chat_v2_diff, parent, false),
+        onDiffDecision
+      )
       else -> throw IllegalArgumentException("Unknown view type: $viewType")
     }
   }
@@ -87,6 +101,7 @@ class ChatMessageAdapter :
       is ChatListItem.PlanItem -> (holder as PlanViewHolder).bind(item)
       is ChatListItem.ToolEvent -> (holder as ToolViewHolder).bind(item)
       is ChatListItem.Error -> (holder as ErrorViewHolder).bind(item)
+      is ChatListItem.DiffProposal -> (holder as DiffViewHolder).bind(item)
     }
   }
 
@@ -175,6 +190,95 @@ class ChatMessageAdapter :
     }
   }
 
+  /**
+   * v2 diff-review card: one checkbox per proposed hunk plus
+   * apply-selected/discard buttons. After the decision the card becomes a
+   * read-only result line.
+   */
+  private class DiffViewHolder(
+    view: View,
+    private val onDecision: (id: String, decision: EditReviewDecision) -> Unit
+  ) : RecyclerView.ViewHolder(view) {
+    private val pathText: TextView = view.findViewById(R.id.diff_path)
+    private val hunksContainer: LinearLayout = view.findViewById(R.id.diff_hunks)
+    private val applyButton: MaterialButton = view.findViewById(R.id.diff_apply_button)
+    private val discardButton: MaterialButton = view.findViewById(R.id.diff_discard_button)
+    private val resultText: TextView = view.findViewById(R.id.diff_result)
+    private val checkBoxes = mutableListOf<CheckBox>()
+    private var item: ChatListItem.DiffProposal? = null
+
+    init {
+      applyButton.setOnClickListener {
+        val current = item ?: return@setOnClickListener
+        val indices = current.hunks
+          .filterIndexed { i, _ -> checkBoxes.getOrNull(i)?.isChecked == true }
+          .map { it.index }
+          .toSet()
+        val decision = when {
+          indices.isEmpty() -> EditReviewDecision.Discard
+          indices.size == current.hunks.size -> EditReviewDecision.ApplyAll
+          else -> EditReviewDecision.ApplySome(indices)
+        }
+        onDecision(current.id, decision)
+      }
+      discardButton.setOnClickListener {
+        item?.let { onDecision(it.id, EditReviewDecision.Discard) }
+      }
+    }
+
+    fun bind(item: ChatListItem.DiffProposal) {
+      this.item = item
+      val context = itemView.context
+      val pending = item.state == DiffProposalState.PENDING
+      pathText.text = item.path
+      hunksContainer.removeAllViews()
+      checkBoxes.clear()
+      item.hunks.forEach { hunk ->
+        val hunkView = LinearLayout(context).apply {
+          orientation = LinearLayout.VERTICAL
+          setPadding(0, 8, 0, 8)
+        }
+        val checkBox = CheckBox(context).apply {
+          text = if (hunk.found) {
+            context.getString(R.string.ai_chat_v2_diff_hunk_title, hunk.index + 1, hunk.oldLineStart)
+          } else {
+            context.getString(R.string.ai_chat_v2_diff_hunk_not_found, hunk.index + 1)
+          }
+          isChecked = true
+          isEnabled = pending
+        }
+        val oldText = TextView(context).apply {
+          text = "- " + hunk.oldText.take(MAX_HUNK_CHARS)
+          setTextAppearance(
+            com.google.android.material.R.style.TextAppearance_Material3_BodySmall
+          )
+        }
+        val newText = TextView(context).apply {
+          text = "+ " + hunk.newText.take(MAX_HUNK_CHARS)
+          setTextAppearance(
+            com.google.android.material.R.style.TextAppearance_Material3_BodySmall
+          )
+        }
+        hunkView.addView(checkBox)
+        hunkView.addView(oldText)
+        hunkView.addView(newText)
+        hunksContainer.addView(hunkView)
+        checkBoxes.add(checkBox)
+      }
+      applyButton.isVisible = pending
+      discardButton.isVisible = pending
+      resultText.isVisible = !pending
+      if (!pending) {
+        resultText.text = when (item.state) {
+          DiffProposalState.APPLIED -> context.getString(R.string.ai_chat_v2_diff_applied)
+          DiffProposalState.PARTIAL -> context.getString(R.string.ai_chat_v2_diff_partially_applied)
+          DiffProposalState.DISCARDED -> context.getString(R.string.ai_chat_v2_diff_discarded)
+          DiffProposalState.PENDING -> ""
+        }
+      }
+    }
+  }
+
   private class ChatDiffCallback : DiffUtil.ItemCallback<ChatListItem>() {
     override fun areItemsTheSame(oldItem: ChatListItem, newItem: ChatListItem): Boolean {
       // Items are append-only; same class at the same position is the same row,
@@ -183,11 +287,19 @@ class ChatMessageAdapter :
       if (oldItem is ChatListItem.User && newItem is ChatListItem.User) {
         return oldItem.text == newItem.text && oldItem.attachments == newItem.attachments
       }
+      if (oldItem is ChatListItem.DiffProposal && newItem is ChatListItem.DiffProposal) {
+        return oldItem.id == newItem.id
+      }
       return true
     }
 
     override fun areContentsTheSame(oldItem: ChatListItem, newItem: ChatListItem): Boolean =
       oldItem == newItem
+  }
+
+  companion object {
+    /** Caracteres por trecho exibidos no card de diff (o resto é cortado). */
+    private const val MAX_HUNK_CHARS = 600
   }
 }
 

@@ -26,6 +26,7 @@ import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
 import android.widget.RadioButton
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
@@ -36,6 +37,9 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import dev.mutwakil.androidide.aiagent.AiAgent
@@ -46,15 +50,15 @@ import dev.mutwakil.androidide.aiagent.providers.AiProviderPlugin
 import kotlinx.coroutines.launch
 
 /**
- * Settings screen for the AI providers registered in [AiAgent.registry].
+ * Settings screen for AI provider entries (chat v2, item 4).
  *
- * Each row shows the provider name, its honestly-declared [Capability] set as
- * chips, the configured model (or a "not configured" hint) and a radio button
- * marking the active provider. Tapping a row opens the configuration dialog:
- * endpoint (OpenAI-compatible only), model (free text with suggestions from
- * [AiProviderPlugin.defaultModels]), API key (password field, stored encrypted
- * via the [dev.mutwakil.androidide.aiagent.store.ProviderConfigStore]), a
- * "Test connection" button and save.
+ * Lists every saved entry — the editable defaults (one per protocol plugin)
+ * plus user-created ones — instead of the bare plugins. Each row shows the
+ * entry name, model, protocol, capability chips (with overrides applied), a
+ * radio button marking the active entry, a "use as fallback" switch and, for
+ * custom entries, a delete button. Tapping a row opens the editor dialog;
+ * the FAB creates a new custom entry (custom name, protocol, base URL,
+ * model id, encrypted API key, fallback toggle, capability overrides).
  */
 class AiProviderSettingsActivity : AppCompatActivity() {
 
@@ -72,15 +76,22 @@ class AiProviderSettingsActivity : AppCompatActivity() {
     emptyView = findViewById(R.id.aiagent_empty_view)
     adapter = ProviderAdapter(
       onEdit = ::showConfigDialog,
-      onSelectActive = { plugin ->
-        AiAgent.configStore().setActiveProviderId(plugin.id)
+      onSelectActive = { config ->
+        AiAgent.configStore().setActiveConfigId(config.configId)
         adapter.notifyDataSetChanged()
-      }
+      },
+      onToggleFallback = { config, enabled ->
+        AiAgent.configStore().saveProviderConfig(config.copy(useAsFallback = enabled))
+        refresh()
+      },
+      onDelete = ::confirmDelete
     )
     findViewById<RecyclerView>(R.id.aiagent_provider_list).apply {
       layoutManager = LinearLayoutManager(this@AiProviderSettingsActivity)
       adapter = this@AiProviderSettingsActivity.adapter
     }
+    findViewById<FloatingActionButton>(R.id.ai_chat_v2_add_provider_fab)
+      .setOnClickListener { showConfigDialog(null) }
   }
 
   override fun onResume() {
@@ -89,56 +100,184 @@ class AiProviderSettingsActivity : AppCompatActivity() {
   }
 
   private fun refresh() {
-    val plugins = AiAgent.registry().all()
+    AiChatV2Providers.ensureDefaults()
+    val configs = AiChatV2Providers.listConfigs()
     val store = AiAgent.configStore()
-    if (store.getActiveProviderId() == null && plugins.isNotEmpty()) {
-      // Default to the first registered provider so the chat has something to use.
-      store.setActiveProviderId(plugins.first().id)
+    if (store.getActiveConfigId() == null && configs.isNotEmpty()) {
+      // Default to the first entry so the chat has something to use.
+      store.setActiveConfigId(configs.first().configId)
     }
-    adapter.submit(plugins)
-    emptyView.isVisible = plugins.isEmpty()
+    adapter.submit(configs)
+    emptyView.isVisible = configs.isEmpty()
   }
 
-  private fun showConfigDialog(plugin: AiProviderPlugin) {
-    val store = AiAgent.configStore()
-    val current = store.getProviderConfig(plugin.id)
-    val view = LayoutInflater.from(this).inflate(R.layout.aiagent_dialog_provider_config, null)
+  private fun confirmDelete(config: ProviderConfig) {
+    if (config.isDefault) {
+      Snackbar.make(
+        findViewById(R.id.aiagent_provider_list),
+        R.string.ai_chat_v2_provider_cannot_delete_default,
+        Snackbar.LENGTH_LONG
+      ).show()
+      return
+    }
+    MaterialAlertDialogBuilder(this)
+      .setTitle(R.string.ai_chat_v2_provider_delete_title)
+      .setMessage(getString(R.string.ai_chat_v2_provider_delete_confirm, config.displayName))
+      .setPositiveButton(R.string.ai_chat_v2_provider_delete) { _, _ ->
+        AiAgent.configStore().deleteProviderConfig(config.configId)
+        Snackbar.make(
+          findViewById(R.id.aiagent_provider_list),
+          R.string.ai_chat_v2_provider_deleted,
+          Snackbar.LENGTH_SHORT
+        ).show()
+        refresh()
+      }
+      .setNegativeButton(R.string.aiagent_config_cancel, null)
+      .show()
+  }
 
-    val tilEndpoint = view.findViewById<TextInputLayout>(R.id.aiagent_til_endpoint)
-    val etEndpoint = view.findViewById<TextInputEditText>(R.id.aiagent_et_endpoint)
-    val actvModel = view.findViewById<AutoCompleteTextView>(R.id.aiagent_actv_model)
-    val etApiKey = view.findViewById<TextInputEditText>(R.id.aiagent_et_api_key)
-    val btnTest = view.findViewById<MaterialButton>(R.id.aiagent_btn_test)
-    val tvResult = view.findViewById<TextView>(R.id.aiagent_tv_test_result)
+  /**
+   * Entry editor dialog. `existing == null` creates a new custom entry
+   * (protocol selectable); otherwise edits it (protocol fixed).
+   */
+  private fun showConfigDialog(existing: ProviderConfig?) {
+    val registry = AiAgent.registry()
+    val protocols = registry.all()
+    if (protocols.isEmpty()) return
 
-    val showEndpoint = plugin.id == OPENAI_COMPATIBLE_PROVIDER_ID
-    tilEndpoint.isVisible = showEndpoint
-    etEndpoint.setText(current?.endpoint.orEmpty())
-    actvModel.setText(current?.model.orEmpty())
-    etApiKey.setText(current?.apiKey.orEmpty())
-    if (plugin.defaultModels.isNotEmpty()) {
-      actvModel.setAdapter(
-        ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, plugin.defaultModels)
+    val view = LayoutInflater.from(this)
+      .inflate(R.layout.ai_chat_v2_dialog_provider_config, null)
+
+    val etName = view.findViewById<TextInputEditText>(R.id.ai_chat_v2_et_name)
+    val actvProtocol = view.findViewById<AutoCompleteTextView>(R.id.ai_chat_v2_actv_protocol)
+    val tilEndpoint = view.findViewById<TextInputLayout>(R.id.ai_chat_v2_til_endpoint)
+    val etEndpoint = view.findViewById<TextInputEditText>(R.id.ai_chat_v2_et_endpoint)
+    val actvModel = view.findViewById<AutoCompleteTextView>(R.id.ai_chat_v2_actv_model)
+    val etApiKey = view.findViewById<TextInputEditText>(R.id.ai_chat_v2_et_api_key)
+    val switchFallback = view.findViewById<MaterialSwitch>(R.id.ai_chat_v2_switch_fallback)
+    val tvCapsMode = view.findViewById<TextView>(R.id.ai_chat_v2_tv_caps_mode)
+    val capsGroup = view.findViewById<ChipGroup>(R.id.ai_chat_v2_caps_chip_group)
+    val btnCapsDefault = view.findViewById<MaterialButton>(R.id.ai_chat_v2_btn_caps_default)
+    val btnTest = view.findViewById<MaterialButton>(R.id.ai_chat_v2_btn_test)
+    val tvResult = view.findViewById<TextView>(R.id.ai_chat_v2_tv_test_result)
+
+    val protocolNames = protocols.map { it.displayName }
+    val protocolIds = protocols.map { it.id }
+    var selectedProtocolId = existing?.providerId
+      ?: protocolIds.firstOrNull { it == OPENAI_COMPATIBLE_PROVIDER_ID }
+      ?: protocolIds.first()
+
+    fun selectedPlugin(): AiProviderPlugin? = registry.get(selectedProtocolId)
+
+    var capsOverride: Set<Capability>? = existing?.capabilityOverrides
+    var capsTouched = false
+
+    fun refreshCapsChips() {
+      val plugin = selectedPlugin()
+      val effective = capsOverride
+        ?: plugin?.let { AiChatV2Capabilities.resolve(it, existing) }
+        ?: emptySet()
+      capsGroup.removeAllViews()
+      Capability.values().forEach { capability ->
+        capsGroup.addView(
+          Chip(this).apply {
+            text = capabilityLabel(capability)
+            tag = capability
+            isCheckable = true
+            isChecked = capability in effective
+            setOnCheckedChangeListener { _, _ -> capsTouched = true }
+          }
+        )
+      }
+      tvCapsMode.text = if (capsOverride == null) {
+        getString(R.string.ai_chat_v2_provider_capabilities) + " — " +
+          getString(R.string.ai_chat_v2_provider_caps_default)
+      } else {
+        getString(R.string.ai_chat_v2_provider_capabilities) + " — " +
+          getString(R.string.ai_chat_v2_provider_caps_custom, capsOverride!!.size)
+      }
+    }
+
+    fun refreshProtocolDependentViews() {
+      val plugin = selectedPlugin()
+      tilEndpoint.isVisible = selectedProtocolId == OPENAI_COMPATIBLE_PROVIDER_ID
+      val models = plugin?.defaultModels.orEmpty()
+      if (models.isNotEmpty()) {
+        actvModel.setAdapter(
+          ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, models)
+        )
+      } else {
+        actvModel.setAdapter(null)
+      }
+      refreshCapsChips()
+    }
+
+    // --- initial values ----------------------------------------------------
+    etName.setText(existing?.displayName.orEmpty())
+    actvProtocol.setText(
+      protocols.firstOrNull { it.id == selectedProtocolId }?.displayName.orEmpty(),
+      false
+    )
+    // Protocol is fixed for existing entries (defaults and customs alike).
+    actvProtocol.isEnabled = existing == null
+    if (existing == null) {
+      actvProtocol.setAdapter(
+        ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, protocolNames)
+      )
+      actvProtocol.setOnItemClickListener { _, _, position, _ ->
+        selectedProtocolId = protocolIds[position]
+        refreshProtocolDependentViews()
+      }
+    }
+    etEndpoint.setText(existing?.endpoint.orEmpty())
+    actvModel.setText(existing?.model.orEmpty())
+    etApiKey.setText(existing?.apiKey.orEmpty())
+    switchFallback.isChecked = existing?.useAsFallback ?: true
+    btnCapsDefault.setOnClickListener {
+      capsOverride = null
+      capsTouched = false
+      refreshCapsChips()
+    }
+    refreshProtocolDependentViews()
+
+    fun collectConfig(): ProviderConfig? {
+      val plugin = selectedPlugin() ?: return null
+      val name = etName.text?.toString()?.trim().orEmpty()
+      val model = actvModel.text?.toString()?.trim().orEmpty()
+      if (name.isBlank() || model.isBlank()) return null
+      val checkedCaps = (0 until capsGroup.childCount)
+        .map { (capsGroup.getChildAt(it) as Chip).tag as? Capability }
+        .filterNotNull()
+        .filterIndexed { index, _ -> (capsGroup.getChildAt(index) as Chip).isChecked }
+        .toSet()
+      return ProviderConfig(
+        providerId = plugin.id,
+        configId = existing?.configId ?: AiChatV2Providers.newCustomId(),
+        displayName = name,
+        apiKey = etApiKey.text?.toString()?.takeIf { it.isNotBlank() },
+        endpoint = if (selectedProtocolId == OPENAI_COMPATIBLE_PROVIDER_ID) {
+          etEndpoint.text?.toString()?.takeIf { it.isNotBlank() }
+        } else {
+          existing?.endpoint
+        },
+        model = model,
+        useAsFallback = switchFallback.isChecked,
+        capabilityOverrides = if (capsTouched) checkedCaps else capsOverride,
+        isDefault = existing?.isDefault ?: false
       )
     }
 
-    fun collectConfig(): ProviderConfig = ProviderConfig(
-      providerId = plugin.id,
-      displayName = plugin.displayName,
-      apiKey = etApiKey.text?.toString()?.takeIf { it.isNotBlank() },
-      endpoint = if (showEndpoint) {
-        etEndpoint.text?.toString()?.takeIf { it.isNotBlank() }
-      } else {
-        current?.endpoint
-      },
-      model = actvModel.text?.toString().orEmpty()
-    )
-
     btnTest.setOnClickListener {
+      val plugin = selectedPlugin()
+      val config = collectConfig()
+      if (plugin == null || config == null) {
+        tvResult.isVisible = true
+        tvResult.setText(R.string.ai_chat_v2_provider_validation)
+        return@setOnClickListener
+      }
       btnTest.isEnabled = false
       tvResult.isVisible = true
       tvResult.setText(R.string.aiagent_config_testing)
-      val config = collectConfig()
       lifecycleScope.launch {
         try {
           val result = plugin.testConnection(config)
@@ -159,25 +298,48 @@ class AiProviderSettingsActivity : AppCompatActivity() {
     }
 
     MaterialAlertDialogBuilder(this)
-      .setTitle(plugin.displayName)
+      .setTitle(
+        existing?.displayName ?: getString(R.string.ai_chat_v2_provider_new_title)
+      )
       .setView(view)
-      .setPositiveButton(R.string.aiagent_config_save) { _, _ ->
-        store.saveProviderConfig(collectConfig())
-        adapter.notifyDataSetChanged()
-      }
+      .setPositiveButton(R.string.aiagent_config_save, null)
       .setNegativeButton(R.string.aiagent_config_cancel, null)
+      .create()
+      .also { dialog ->
+        dialog.setOnShowListener {
+          dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            .setOnClickListener {
+              val config = collectConfig()
+              if (config == null) {
+                tvResult.isVisible = true
+                tvResult.setText(R.string.ai_chat_v2_provider_validation)
+                return@setOnClickListener
+              }
+              AiAgent.configStore().saveProviderConfig(config)
+              Snackbar.make(
+                findViewById(R.id.aiagent_provider_list),
+                R.string.ai_chat_v2_provider_saved,
+                Snackbar.LENGTH_SHORT
+              ).show()
+              dialog.dismiss()
+              refresh()
+            }
+        }
+      }
       .show()
   }
 
   private inner class ProviderAdapter(
-    private val onEdit: (AiProviderPlugin) -> Unit,
-    private val onSelectActive: (AiProviderPlugin) -> Unit
+    private val onEdit: (ProviderConfig?) -> Unit,
+    private val onSelectActive: (ProviderConfig) -> Unit,
+    private val onToggleFallback: (ProviderConfig, Boolean) -> Unit,
+    private val onDelete: (ProviderConfig) -> Unit
   ) : RecyclerView.Adapter<ProviderAdapter.Holder>() {
 
-    private var plugins: List<AiProviderPlugin> = emptyList()
+    private var configs: List<ProviderConfig> = emptyList()
 
-    fun submit(plugins: List<AiProviderPlugin>) {
-      this.plugins = plugins
+    fun submit(configs: List<ProviderConfig>) {
+      this.configs = configs
       notifyDataSetChanged()
     }
 
@@ -187,30 +349,41 @@ class AiProviderSettingsActivity : AppCompatActivity() {
       return Holder(view)
     }
 
-    override fun getItemCount(): Int = plugins.size
+    override fun getItemCount(): Int = configs.size
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
-      holder.bind(plugins[position])
+      holder.bind(configs[position])
     }
 
     inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
       private val radio: RadioButton = view.findViewById(R.id.aiagent_radio_active)
       private val name: TextView = view.findViewById(R.id.aiagent_provider_name)
       private val model: TextView = view.findViewById(R.id.aiagent_provider_model)
+      private val protocol: TextView = view.findViewById(R.id.ai_chat_v2_provider_protocol)
+      private val defaultBadge: TextView =
+        view.findViewById(R.id.ai_chat_v2_provider_default_badge)
       private val chips: ChipGroup = view.findViewById(R.id.aiagent_capability_chips)
+      private val fallbackSwitch: MaterialSwitch =
+        view.findViewById(R.id.ai_chat_v2_fallback_switch)
+      private val deleteButton: MaterialButton =
+        view.findViewById(R.id.ai_chat_v2_delete_button)
 
-      fun bind(plugin: AiProviderPlugin) {
+      fun bind(config: ProviderConfig) {
         val store = AiAgent.configStore()
-        val config = store.getProviderConfig(plugin.id)
-        name.text = plugin.displayName
-        model.text = config?.model?.takeIf { it.isNotBlank() }
+        val plugin = AiAgent.registry().get(config.providerId)
+        name.text = config.displayName
+        model.text = config.model.takeIf { it.isNotBlank() }
           ?: itemView.context.getString(R.string.aiagent_provider_not_configured)
-        radio.isChecked = store.getActiveProviderId() == plugin.id
-        radio.setOnClickListener { onSelectActive(plugin) }
+        protocol.text = plugin?.displayName ?: config.providerId
+        defaultBadge.isVisible = config.isDefault
+
+        radio.setOnCheckedChangeListener(null)
+        radio.isChecked = store.getActiveConfigId() == config.configId
+        radio.setOnClickListener { onSelectActive(config) }
+
         chips.removeAllViews()
-        val caps = config?.let { plugin.resolvedCapabilities(it) } ?: plugin.capabilities
-        caps
-          .map { itemView.context.capabilityLabel(it) }
+        val caps = plugin?.let { AiChatV2Capabilities.resolve(it, config) } ?: emptySet()
+        caps.map { itemView.context.capabilityLabel(it) }
           .distinct()
           .forEach { label ->
             chips.addView(
@@ -221,7 +394,17 @@ class AiProviderSettingsActivity : AppCompatActivity() {
               }
             )
           }
-        itemView.setOnClickListener { onEdit(plugin) }
+
+        fallbackSwitch.setOnCheckedChangeListener(null)
+        fallbackSwitch.isChecked = config.useAsFallback
+        fallbackSwitch.setOnCheckedChangeListener { _, enabled ->
+          onToggleFallback(config, enabled)
+        }
+
+        deleteButton.isVisible = !config.isDefault
+        deleteButton.setOnClickListener { onDelete(config) }
+
+        itemView.setOnClickListener { onEdit(config) }
       }
     }
   }

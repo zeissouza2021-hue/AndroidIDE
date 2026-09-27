@@ -19,6 +19,7 @@ package dev.mutwakil.androidide.aiagent.agent
 
 import com.google.gson.JsonParser
 import dev.mutwakil.androidide.aiagent.agent.tools.AnalyzeImageTool
+import dev.mutwakil.androidide.aiagent.agent.tools.EditFileTool
 import dev.mutwakil.androidide.aiagent.agent.ConditionalConfirmation
 import dev.mutwakil.androidide.aiagent.agent.tools.summarizeArgs
 import dev.mutwakil.androidide.aiagent.context.ProjectContextIndexer
@@ -331,12 +332,13 @@ class AgentEngine(
         }
         if (needsConfirm) {
             send(AgentEvent.Status("Aguardando confirmação: ${tool.definition.name}"))
-            val confirmed = toolCtx.permissions.requireConfirmation(
-                tool.definition.name,
-                summarizeArgs(call)
-            )
-            if (!confirmed) {
-                return ToolResult.error("Ação cancelada: usuário não confirmou '${tool.definition.name}'.")
+            when (val confirmation = confirmToolCall(tool, call, toolCtx)) {
+                is ToolConfirmation.Denied ->
+                    return ToolResult.error(
+                        "Ação cancelada: usuário não confirmou '${tool.definition.name}'."
+                    )
+                is ToolConfirmation.Executed -> return confirmation.result
+                ToolConfirmation.Confirmed -> { /* segue para a execução normal */ }
             }
         }
 
@@ -354,6 +356,67 @@ class AgentEngine(
             return visionFollowUp(call, toolCtx)
         }
         return result
+    }
+
+    /** Resultado da etapa de confirmação de um [ToolCall]. */
+    private sealed interface ToolConfirmation {
+        /** Usuário confirmou; executar a tool normalmente. */
+        data object Confirmed : ToolConfirmation
+
+        /** Usuário recusou; não executar. */
+        data object Denied : ToolConfirmation
+
+        /**
+         * A confirmação já executou a ação (ex.: revisão de diff aplicou só
+         * alguns trechos); o [result] é o resultado final da tool.
+         */
+        data class Executed(val result: ToolResult) : ToolConfirmation
+    }
+
+    /**
+     * Confirmação de um [ToolCall].
+     *
+     * Para [EditFileTool], quando a UI liga
+     * [PermissionManager.confirmEditDiff], o usuário revisa o diff por trecho
+     * ([EditReviewRequest]) e pode aplicar tudo, só alguns trechos ou
+     * descartar — a aplicação usa a própria tool (snapshot/histórico intactos,
+     * desfazível). Sem UI ligada (ou proposta inválida), cai no diálogo
+     * clássico permitir/negar.
+     */
+    private suspend fun confirmToolCall(
+        tool: AgentTool,
+        call: ToolCall,
+        toolCtx: ToolContext
+    ): ToolConfirmation {
+        val reviewer = toolCtx.permissions.confirmEditDiff
+        if (tool is EditFileTool && reviewer != null) {
+            val request = runCatching {
+                tool.buildReviewRequest(call.argumentsJson, toolCtx.projectRoot)
+            }.getOrNull()
+            if (request != null) {
+                return when (val decision = reviewer(request)) {
+                    EditReviewDecision.ApplyAll -> ToolConfirmation.Confirmed
+                    EditReviewDecision.Discard -> ToolConfirmation.Denied
+                    is EditReviewDecision.ApplySome -> {
+                        if (decision.indices.isEmpty()) {
+                            ToolConfirmation.Denied
+                        } else {
+                            val result = tool.executeWithEdits(
+                                call.argumentsJson,
+                                decision.indices,
+                                toolCtx
+                            )
+                            ToolConfirmation.Executed(result)
+                        }
+                    }
+                }
+            }
+        }
+        val confirmed = toolCtx.permissions.requireConfirmation(
+            tool.definition.name,
+            summarizeArgs(call)
+        )
+        return if (confirmed) ToolConfirmation.Confirmed else ToolConfirmation.Denied
     }
 
     /**

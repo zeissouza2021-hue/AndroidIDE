@@ -24,25 +24,27 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import dev.mutwakil.androidide.aiagent.model.Capability
 import dev.mutwakil.androidide.aiagent.model.ProviderConfig
 
 /**
  * Persists [ProviderConfig]s.
  *
  * Storage layout:
- * - API keys go to an [EncryptedSharedPreferences] file (`aiagent_secrets`),
- *   encrypted with a [MasterKey] (AES256-GCM).
- * - Extra headers also go to the encrypted file: they frequently carry
- *   credentials (`Authorization`, `x-api-key`, ...).
- * - Everything else (provider id, display name, endpoint, model, the set of
- *   configured ids and the active provider id) lives in a regular
- *   [SharedPreferences] file (`aiagent_prefs`).
+ * - API keys and extra headers go to an [EncryptedSharedPreferences] file (`aiagent_secrets`),
+ *   encrypted with a [MasterKey] (AES256-GCM). Extra headers frequently carry
+ *   credentials (`Authorization`, `x-api-key`, ...), so they are never stored in plain text.
+ * - Everything else (config id, provider id, display name, endpoint, model,
+ *   fallback flag, capability overrides, the set of configured ids and the
+ *   active config id) lives in a regular [SharedPreferences] file (`aiagent_prefs`).
  *
  * Legacy note: versions before this change stored `extraHeaders` in the
  * plain prefs file; reads fall back to that key so existing configs are
  * not lost, and the plaintext copy is removed on the next save.
  *
- * Per-provider keys are namespaced as `provider.<id>.<field>`.
+ * Per-entry keys are namespaced as `provider.<configId>.<field>`.
+ * Entries stored before v2 used the provider id as the key; since default
+ * entries keep `configId == providerId`, they resolve unchanged.
  */
 class ProviderConfigStore(context: Context) {
 
@@ -78,16 +80,30 @@ class ProviderConfigStore(context: Context) {
 
     private fun prefix(id: String) = "provider.$id."
 
-    /** Inserts or replaces the configuration for [config.providerId]. */
+    /** Inserts or replaces the configuration entry [config.configId]. */
     fun saveProviderConfig(config: ProviderConfig) {
-        val p = prefix(config.providerId)
+        val id = config.configId.ifBlank { config.providerId }
+        val p = prefix(id)
         prefs.edit()
+            .putString(p + "configId", id)
+            .putString(p + "providerId", config.providerId)
             .putString(p + "displayName", config.displayName)
             .putString(p + "endpoint", config.endpoint)
             .putString(p + "model", config.model)
             // Remove a cópia legada em texto puro (agora vai para o prefs criptografado).
             .remove(p + "extraHeaders")
-            .putStringSet(KEY_PROVIDER_IDS, (listConfiguredIds() + config.providerId).toMutableSet())
+            .putBoolean(p + "useAsFallback", config.useAsFallback)
+            .putBoolean(p + "isDefault", config.isDefault)
+            .apply {
+                val overrides = config.capabilityOverrides
+                if (overrides == null) {
+                    remove(p + "capabilityOverrides")
+                } else {
+                    putStringSet(p + "capabilityOverrides", overrides.map { it.name }.toMutableSet())
+                }
+            }.apply()
+        prefs.edit()
+            .putStringSet(KEY_PROVIDER_IDS, (listConfiguredIds() + id).toMutableSet())
             .apply()
         secrets.edit().let { editor ->
             if (config.apiKey.isNullOrEmpty()) {
@@ -105,12 +121,12 @@ class ProviderConfigStore(context: Context) {
         }
     }
 
-    /** Returns the stored configuration for [id], or null if never saved. */
+    /** Returns the stored configuration entry for [id] (a config id), or null if never saved. */
     fun getProviderConfig(id: String): ProviderConfig? {
         if (id !in listConfiguredIds()) return null
         val p = prefix(id)
         return ProviderConfig(
-            providerId = id,
+            providerId = prefs.getString(p + "providerId", id) ?: id,
             displayName = prefs.getString(p + "displayName", id) ?: id,
             apiKey = secrets.getString(p + "apiKey", null),
             endpoint = prefs.getString(p + "endpoint", null),
@@ -120,40 +136,63 @@ class ProviderConfigStore(context: Context) {
                 secrets.getString(p + "extraHeaders", null)
                     ?: prefs.getString(p + "extraHeaders", null)
             ),
+            configId = prefs.getString(p + "configId", id) ?: id,
+            useAsFallback = prefs.getBoolean(p + "useAsFallback", true),
+            capabilityOverrides = readCapabilityOverrides(
+                prefs.getStringSet(p + "capabilityOverrides", null)
+            ),
+            isDefault = prefs.getBoolean(p + "isDefault", false),
         )
     }
 
-    /** Ids of all saved provider configurations. */
+    /** Ids of all saved provider configuration entries. */
     fun listConfiguredIds(): Set<String> =
         prefs.getStringSet(KEY_PROVIDER_IDS, mutableSetOf())?.toSet().orEmpty()
 
-    /** Deletes the configuration for [id], clearing the active provider if it matches. */
+    /** Deletes the configuration entry for [id], clearing the active entry if it matches. */
     fun deleteProviderConfig(id: String) {
         val p = prefix(id)
         prefs.edit()
+            .remove(p + "configId")
+            .remove(p + "providerId")
             .remove(p + "displayName")
             .remove(p + "endpoint")
             .remove(p + "model")
             .remove(p + "extraHeaders") // cópia legada em texto puro
+            .remove(p + "useAsFallback")
+            .remove(p + "capabilityOverrides")
+            .remove(p + "isDefault")
             .putStringSet(KEY_PROVIDER_IDS, (listConfiguredIds() - id).toMutableSet())
             .apply()
         secrets.edit().remove(p + "apiKey").remove(p + "extraHeaders").apply()
-        if (getActiveProviderId() == id) setActiveProviderId(null)
+        if (getActiveConfigId() == id) setActiveConfigId(null)
     }
 
-    /** Id of the currently active provider, or null if none was selected. */
-    fun getActiveProviderId(): String? = prefs.getString(KEY_ACTIVE_PROVIDER_ID, null)
+    /** Id of the currently active configuration entry, or null if none was selected. */
+    fun getActiveConfigId(): String? = prefs.getString(KEY_ACTIVE_PROVIDER_ID, null)
 
-    /** Selects the active provider; null clears the selection. */
-    fun setActiveProviderId(id: String?) {
+    /** Selects the active configuration entry; null clears the selection. */
+    fun setActiveConfigId(id: String?) {
         prefs.edit().apply {
             if (id == null) remove(KEY_ACTIVE_PROVIDER_ID) else putString(KEY_ACTIVE_PROVIDER_ID, id)
         }.apply()
     }
 
-    /** The stored configuration of the active provider, or null. */
+    /**
+     * Id of the currently active provider entry, or null if none was selected.
+     * Same as [getActiveConfigId]; kept for callers written before v2.
+     */
+    fun getActiveProviderId(): String? = getActiveConfigId()
+
+    /**
+     * Selects the active provider entry; null clears the selection.
+     * Same as [setActiveConfigId]; kept for callers written before v2.
+     */
+    fun setActiveProviderId(id: String?) = setActiveConfigId(id)
+
+    /** The stored configuration of the active entry, or null. */
     fun getActiveConfig(): ProviderConfig? =
-        getActiveProviderId()?.let { getProviderConfig(it) }
+        getActiveConfigId()?.let { getProviderConfig(it) }
 
     private fun readExtraHeaders(json: String?): Map<String, String> {
         if (json.isNullOrEmpty()) return emptyMap()
@@ -163,6 +202,15 @@ class ProviderConfigStore(context: Context) {
         } catch (_: Exception) {
             emptyMap()
         }
+    }
+
+    /**
+     * Reads the stored capability overrides: absent key means "no override"
+     * (null); a present (possibly empty) set is the explicit override.
+     */
+    private fun readCapabilityOverrides(names: Set<String>?): Set<Capability>? {
+        if (names == null) return null
+        return names.mapNotNull { runCatching { Capability.valueOf(it) }.getOrNull() }.toSet()
     }
 
     companion object {

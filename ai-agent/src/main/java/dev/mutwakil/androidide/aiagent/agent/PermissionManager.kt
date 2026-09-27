@@ -46,6 +46,16 @@ class PermissionManager {
      */
     var confirmCallback: suspend (title: String, detail: String) -> Boolean = { _, _ -> false }
 
+    /**
+     * Revisão estruturada de diff para `edit_file` (chat v2).
+     *
+     * Quando ligado, o [AgentEngine] oferece o [EditReviewRequest] (trechos
+     * propostos com número da linha) em vez do diálogo clássico permitir/negar,
+     * e aplica a [EditReviewDecision] do usuário pela tool normal (com
+     * histórico/snapshot, desfazível). Nulo = usa [confirmCallback].
+     */
+    var confirmEditDiff: (suspend (EditReviewRequest) -> EditReviewDecision)? = null
+
     /** Pede confirmação ao usuário; retorna `true` se confirmada. */
     suspend fun requireConfirmation(title: String, detail: String): Boolean =
         confirmCallback(title, detail)
