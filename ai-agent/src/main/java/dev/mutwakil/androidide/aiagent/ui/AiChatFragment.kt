@@ -38,13 +38,17 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
 import dev.mutwakil.androidide.aiagent.R
+import dev.mutwakil.androidide.aiagent.gate.CapabilityGate
 import dev.mutwakil.androidide.aiagent.model.AgentMode
 import dev.mutwakil.androidide.aiagent.model.Attachment
 import dev.mutwakil.androidide.aiagent.model.AttachmentType
+import dev.mutwakil.androidide.aiagent.model.Capability
 import dev.mutwakil.androidide.aiagent.providers.AiProviderPlugin
 import dev.mutwakil.androidide.aiagent.voice.VoiceInputController
 import java.io.File
@@ -57,14 +61,21 @@ import kotlinx.coroutines.withContext
  * Multimodal chat UI for the AI development agent.
  *
  * The input bar adapts to the active provider's [capabilities][dev.mutwakil.androidide.aiagent.model.Capability]:
- * the image/file/mic buttons are only visible when the provider declares
- * `IMAGE_INPUT`/`VISION`, `FILE_INPUT`/`PDF_INPUT` and `VOICE_INPUT` respectively.
- * Attachments that slip through (or a missing provider configuration) are
- * rejected with a clear error via `CapabilityGate`.
+ * the image/video/file buttons stay visible but are dimmed when the provider
+ * cannot handle them (tapping shows why); the mic button is hidden without
+ * `VOICE_INPUT`. Attachments that slip through (or a missing provider
+ * configuration) are rejected with a clear error via `CapabilityGate`.
+ *
+ * v2: the open file + current selection arrive as removable context chips,
+ * "anexar erro" pastes recent build/logcat output, and `edit_file` proposals
+ * are reviewed as in-chat diff cards (apply per hunk) instead of a blind
+ * allow/deny dialog.
  */
 class AiChatFragment : Fragment() {
 
-  private lateinit var viewModel: AiChatViewModel
+  /** Exposto para o painel v2 sincronizar o seletor de modelo. */
+  internal lateinit var viewModel: AiChatViewModel
+    private set
   private lateinit var voiceController: VoiceInputController
 
   private lateinit var messageList: RecyclerView
@@ -77,13 +88,21 @@ class AiChatFragment : Fragment() {
   private lateinit var pendingAdapter: PendingAttachmentAdapter
   private lateinit var modeToggle: MaterialButtonToggleGroup
   private lateinit var capabilitySummary: TextView
+  private lateinit var contextChips: ChipGroup
+  private lateinit var attachErrorButton: MaterialButton
   private lateinit var attachImageButton: MaterialButton
+  private lateinit var attachVideoButton: MaterialButton
   private lateinit var attachFileButton: MaterialButton
   private lateinit var micButton: MaterialButton
   private lateinit var messageInput: TextInputEditText
   private lateinit var sendButton: MaterialButton
 
   private val pickImageLauncher =
+    registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+      uri?.let { onContentPicked(it) }
+    }
+
+  private val pickVideoLauncher =
     registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
       uri?.let { onContentPicked(it) }
     }
@@ -123,6 +142,13 @@ class AiChatFragment : Fragment() {
     setupPendingAttachments()
     setupInputBar()
     setupVoiceAndAttachments()
+    setupContextChips()
+
+    // Contexto automático v2 (arquivo aberto + seleção) vindo do painel/ação.
+    viewModel.setInitialContext(
+      arguments?.getString(ARG_FILE_PATH),
+      arguments?.getString(ARG_SELECTION)
+    )
 
     // Route destructive tool confirmations through a Material dialog.
     viewModel.confirmHandler = { title, detail -> showConfirmDialog(title, detail) }
@@ -154,6 +180,12 @@ class AiChatFragment : Fragment() {
     (activity as? AiChatActivity)?.refreshProviderMenu()
   }
 
+  /** Called by the v2 panel header when the user picks another model entry. */
+  fun setActiveConfig(configId: String) {
+    if (!::viewModel.isInitialized) return
+    viewModel.setActiveConfig(configId)
+  }
+
   fun currentProviderId(): String? =
     if (::viewModel.isInitialized) viewModel.uiState.value.activeProvider?.id else null
 
@@ -170,7 +202,10 @@ class AiChatFragment : Fragment() {
     pendingList = view.findViewById(R.id.pending_attachments_list)
     modeToggle = view.findViewById(R.id.mode_toggle)
     capabilitySummary = view.findViewById(R.id.capability_summary)
+    contextChips = view.findViewById(R.id.context_chips)
+    attachErrorButton = view.findViewById(R.id.attach_error_button)
     attachImageButton = view.findViewById(R.id.attach_image_button)
+    attachVideoButton = view.findViewById(R.id.attach_video_button)
     attachFileButton = view.findViewById(R.id.attach_file_button)
     micButton = view.findViewById(R.id.mic_button)
     messageInput = view.findViewById(R.id.message_input)
@@ -178,7 +213,9 @@ class AiChatFragment : Fragment() {
   }
 
   private fun setupMessageList() {
-    messageAdapter = ChatMessageAdapter()
+    messageAdapter = ChatMessageAdapter { id, decision ->
+      viewModel.resolveDiffProposal(id, decision)
+    }
     messageList.adapter = messageAdapter
     messageAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
       override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
@@ -228,8 +265,15 @@ class AiChatFragment : Fragment() {
   }
 
   private fun setupVoiceAndAttachments() {
-    attachImageButton.setOnClickListener { pickImageLauncher.launch("image/*") }
-    attachFileButton.setOnClickListener { pickFileLauncher.launch("*/*") }
+    attachImageButton.setOnClickListener {
+      tryAttach(Capability.IMAGE_INPUT) { pickImageLauncher.launch("image/*") }
+    }
+    attachVideoButton.setOnClickListener {
+      tryAttach(Capability.VIDEO_INPUT) { pickVideoLauncher.launch("video/*") }
+    }
+    attachFileButton.setOnClickListener {
+      tryAttach(Capability.FILE_INPUT) { pickFileLauncher.launch("*/*") }
+    }
     micButton.setOnClickListener {
       if (voiceController.needsPermission()) {
         audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -237,6 +281,25 @@ class AiChatFragment : Fragment() {
         startVoiceInput()
       }
     }
+  }
+
+  /**
+   * v2: os botões de anexo ficam visíveis mesmo sem suporte — esmaecidos —
+   * e o toque explica o motivo em vez de falhar em silêncio.
+   */
+  private fun tryAttach(required: Capability, onAllowed: () -> Unit) {
+    val state = viewModel.uiState.value
+    if (required in state.capabilities) {
+      onAllowed()
+    } else {
+      val name = state.activeProvider?.displayName
+        ?: getString(R.string.aiagent_no_providers)
+      showMessage(CapabilityGate.unavailableMessage(name, required))
+    }
+  }
+
+  private fun setupContextChips() {
+    attachErrorButton.setOnClickListener { viewModel.addErrorChip() }
   }
 
   // ---------------------------------------------------------------------------
@@ -255,15 +318,20 @@ class AiChatFragment : Fragment() {
     pendingAdapter.submitList(state.pendingAttachments)
     pendingList.isVisible = state.pendingAttachments.isNotEmpty()
 
-    // Capability-gated input bar: hide what the provider cannot do.
-    // (caps are resolved off-main-thread in the ViewModel — never per render.)
+    // Capability-gated input bar (v2): os botões de anexo ficam visíveis,
+    // esmaecidos quando o provedor não suporta (o toque explica o motivo).
+    // (caps são resolvidas fora da main thread no ViewModel — nunca por render.)
     val caps = state.capabilities
-    attachImageButton.isVisible = CapabilityUi.supportsImageInput(caps)
-    attachFileButton.isVisible = CapabilityUi.supportsFileInput(caps)
+    attachImageButton.alpha = if (Capability.IMAGE_INPUT in caps) 1f else DIMMED_ALPHA
+    attachVideoButton.alpha = if (Capability.VIDEO_INPUT in caps) 1f else DIMMED_ALPHA
+    attachFileButton.alpha = if (Capability.FILE_INPUT in caps) 1f else DIMMED_ALPHA
     micButton.isVisible = CapabilityUi.supportsVoiceInput(caps)
     capabilitySummary.text = state.activeProvider?.let { plugin ->
       "${plugin.displayName} \u00b7 ${CapabilityUi.summary(requireContext(), caps)}"
     } ?: getString(R.string.aiagent_no_providers)
+
+    // Chips de contexto automático (v2).
+    renderContextChips(state.chips)
 
     // Keep the toggle in sync with the state (e.g. after rotation).
     val checkedId = if (state.mode == AgentMode.CHAT) R.id.mode_button_chat else R.id.mode_button_agent
@@ -403,8 +471,27 @@ class AiChatFragment : Fragment() {
     view?.let { Snackbar.make(it, message, Snackbar.LENGTH_LONG).show() }
   }
 
+  /** Desenha os chips de contexto (removíveis pelo "x" de cada chip). */
+  private fun renderContextChips(chips: List<ChatContextChip>) {
+    contextChips.removeAllViews()
+    chips.forEach { chip ->
+      contextChips.addView(
+        Chip(requireContext()).apply {
+          text = chip.label
+          isCloseIconVisible = true
+          setOnCloseIconClickListener { viewModel.removeChip(chip.id) }
+        }
+      )
+    }
+  }
+
   companion object {
     private const val ARG_PROJECT_PATH = "project_path"
+    private const val ARG_FILE_PATH = "file_path"
+    private const val ARG_SELECTION = "selection"
+
+    /** Alpha dos botões de anexo quando o provedor não suporta o tipo. */
+    private const val DIMMED_ALPHA = 0.45f
 
     private val CODE_EXTENSIONS = setOf(
       "kt", "kts", "java", "xml", "gradle", "py", "js", "ts",
@@ -412,8 +499,23 @@ class AiChatFragment : Fragment() {
     )
 
     fun newInstance(projectPath: String?): AiChatFragment =
+      newInstance(projectPath, null, null)
+
+    /**
+     * v2: aceita o caminho do arquivo aberto e a seleção atual como
+     * contexto inicial (chips removíveis).
+     */
+    fun newInstance(
+      projectPath: String?,
+      initialFilePath: String?,
+      initialSelection: String?
+    ): AiChatFragment =
       AiChatFragment().apply {
-        arguments = Bundle().apply { putString(ARG_PROJECT_PATH, projectPath) }
+        arguments = Bundle().apply {
+          putString(ARG_PROJECT_PATH, projectPath)
+          putString(ARG_FILE_PATH, initialFilePath)
+          putString(ARG_SELECTION, initialSelection)
+        }
       }
   }
 }

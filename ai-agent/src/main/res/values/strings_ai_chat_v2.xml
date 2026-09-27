@@ -32,7 +32,8 @@
     <string name="ai_chat_v2_attach_error_cd">Anexar erro do build</string>
     <string name="ai_chat_v2_no_build_logs">Sem logs de build para anexar.</string>
     <string name="ai_chat_v2_chip_file">Arquivo: %1$s</string>
-    <string name="ai_chat_v2_chip_selection">Seleção em %1$s</string>
+    <string name="ai_chat_v2_chip_selection">Trecho selecionado</string>
+    <string name="ai_chat_v2_context_attached">Contexto anexado: %1$s</string>
     <string name="ai_chat_v2_chip_build_error">Erro de build</string>
     <string name="ai_chat_v2_remove_chip">Remover</string>
     <string name="ai_chat_v2_attach_video">Anexar vídeo</string>

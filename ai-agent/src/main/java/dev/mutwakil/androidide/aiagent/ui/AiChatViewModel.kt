@@ -26,16 +26,22 @@ import dev.mutwakil.androidide.aiagent.AiAgent
 import dev.mutwakil.androidide.aiagent.R
 import dev.mutwakil.androidide.aiagent.agent.AgentEngine
 import dev.mutwakil.androidide.aiagent.agent.AgentEvent
+import dev.mutwakil.androidide.aiagent.agent.EditHunk
+import dev.mutwakil.androidide.aiagent.agent.EditReviewDecision
+import dev.mutwakil.androidide.aiagent.agent.EditReviewRequest
 import dev.mutwakil.androidide.aiagent.agent.PermissionManager
 import dev.mutwakil.androidide.aiagent.model.AgentMode
 import dev.mutwakil.androidide.aiagent.gate.CapabilityGate
 import dev.mutwakil.androidide.aiagent.model.Attachment
 import dev.mutwakil.androidide.aiagent.model.Capability
 import dev.mutwakil.androidide.aiagent.model.ChatMessage
+import dev.mutwakil.androidide.aiagent.model.ProviderConfig
 import dev.mutwakil.androidide.aiagent.model.Role
 import dev.mutwakil.androidide.aiagent.providers.AiProviderPlugin
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,6 +58,16 @@ sealed interface ChatListItem {
   data class PlanItem(val steps: List<String>, val doneCount: Int) : ChatListItem
   data class ToolEvent(val name: String, val ok: Boolean?) : ChatListItem
   data class Error(val text: String) : ChatListItem
+  /**
+   * v2 diff-review card: proposed `edit_file` hunks awaiting the user's
+   * decision (apply all / some / discard).
+   */
+  data class DiffProposal(
+    val id: String,
+    val path: String,
+    val hunks: List<EditHunk>,
+    val state: DiffProposalState
+  ) : ChatListItem
 }
 
 /** Full UI state for the AI chat screen. */
@@ -66,7 +82,11 @@ data class ChatUiState(
   val capabilities: Set<Capability> = emptySet(),
   val pendingAttachments: List<Attachment> = emptyList(),
   /** v2: o painel abre na aba Perguntar; Agente (com tools) é opt-in. */
-  val mode: AgentMode = AgentMode.CHAT
+  val mode: AgentMode = AgentMode.CHAT,
+  /** v2: id da entrada de provider ativa (padrão ou personalizada). */
+  val activeConfigId: String? = null,
+  /** v2: chips de contexto automático (arquivo, seleção, erro anexado). */
+  val chips: List<ChatContextChip> = emptyList()
 )
 
 /**
@@ -98,35 +118,65 @@ class AiChatViewModel(
   private var currentEngine: AgentEngine? = null
   private var currentJob: Job? = null
 
+  /** Pending diff reviews: card id -> decision the engine is suspended on. */
+  private val diffDecisions = mutableMapOf<String, CompletableDeferred<EditReviewDecision>>()
+
   init {
     AiAgent.init(application)
+    AiChatV2Providers.ensureDefaults()
     permissions.confirmCallback = { title, detail ->
       confirmHandler?.invoke(title, detail) == true
     }
-    _uiState.update { it.copy(activeProvider = resolveInitialProvider()) }
-    refreshCapabilities()
-  }
-
-  /** Switches the active provider for this session (drives capability-gated UI). */
-  fun setActiveProvider(plugin: AiProviderPlugin) {
-    if (_uiState.value.isBusy) return
-    _uiState.update { it.copy(activeProvider = plugin) }
+    // v2: edit_file vira revisão de diff no chat (card aplicar/descartar).
+    permissions.confirmEditDiff = { request -> reviewEditDiff(request) }
+    val initial = resolveInitialConfig()
+    _uiState.update {
+      it.copy(
+        activeProvider = initial?.first,
+        activeConfigId = initial?.second?.configId
+      )
+    }
     refreshCapabilities()
   }
 
   /**
-   * Re-resolves the active provider's capabilities off the main thread.
+   * Switches the active provider for this session (legacy entry point used by
+   * the old activity's provider menu; maps to the protocol's default entry).
+   */
+  fun setActiveProvider(plugin: AiProviderPlugin) {
+    if (_uiState.value.isBusy) return
+    val config = AiChatV2Providers.defaultConfigFor(plugin.id)
+      ?: AiChatV2Providers.listConfigs().firstOrNull { it.providerId == plugin.id }
+      ?: return
+    setActiveConfig(config.configId)
+  }
+
+  /** Switches the active provider entry (v2 model selector in the panel header). */
+  fun setActiveConfig(configId: String) {
+    if (_uiState.value.isBusy) return
+    val (plugin, config) = AiChatV2Providers.resolveConfig(configId) ?: return
+    AiAgent.configStore().setActiveConfigId(config.configId)
+    _uiState.update { it.copy(activeProvider = plugin, activeConfigId = config.configId) }
+    refreshCapabilities()
+  }
+
+  /**
+   * Re-resolves the active entry's capabilities off the main thread.
    * Reading them touches EncryptedSharedPreferences (keystore), so this must
    * never run per-render — previously it ran on every streamed token.
+   * v2: applies the entry's capability overrides when present.
    */
   fun refreshCapabilities() {
     val plugin = _uiState.value.activeProvider
+    val config = _uiState.value.activeConfigId?.let {
+      AiAgent.configStore().getProviderConfig(it)
+    }
     if (plugin == null) {
       _uiState.update { it.copy(capabilities = emptySet()) }
       return
     }
     viewModelScope.launch(Dispatchers.IO) {
-      val caps = CapabilityUi.resolvedCaps(plugin)
+      val caps = AiChatV2Capabilities.resolve(plugin, config)
       _uiState.update { it.copy(capabilities = caps) }
     }
   }
@@ -145,18 +195,27 @@ class AiChatViewModel(
     _uiState.update { it.copy(pendingAttachments = it.pendingAttachments - attachment) }
   }
 
-  /** Validates capabilities/config, then runs the message through the agent engine. */
+  /**
+   * Validates capabilities/config, then runs the message through the agent engine.
+   *
+   * v2: context chips are consumed by this message (prepended to what the
+   * model sees, then cleared), and a retryable provider failure
+   * (rate-limit/overload/context-overflow) automatically retries with the
+   * next fallback-enabled entry, posting a visible "switched models" warning.
+   */
   fun sendMessage(text: String, attachments: List<Attachment> = emptyList()) {
     val state = _uiState.value
     if (state.isBusy) return
     val trimmed = text.trim()
     if (trimmed.isEmpty() && attachments.isEmpty()) return
 
-    val plugin = state.activeProvider
-    if (plugin == null) {
-      addError(getApplication<Application>().getString(R.string.aiagent_no_providers))
-      return
-    }
+    val app = getApplication<Application>()
+    val (plugin, config) = state.activeConfigId
+      ?.let { AiChatV2Providers.resolveConfig(it) }
+      ?: run {
+        addError(app.getString(R.string.aiagent_no_providers))
+        return
+      }
 
     // Claim the busy flag synchronously on the caller thread (main), before
     // the coroutine starts: otherwise a second send can slip through the
@@ -165,26 +224,11 @@ class AiChatViewModel(
     _uiState.update { it.copy(isBusy = true) }
 
     currentJob = viewModelScope.launch {
-      val app = getApplication<Application>()
-
-      val config = AiAgent.configStore().getActiveConfig()
-      if (config == null) {
-        addError(
-          app.getString(R.string.aiagent_no_provider_configured) + " " +
-            app.getString(R.string.aiagent_open_settings)
-        )
-        _uiState.update { it.copy(isBusy = false) }
-        return@launch
-      }
-      if (config.providerId != plugin.id) {
-        addError(app.getString(R.string.aiagent_no_config_for_provider, plugin.displayName))
-        _uiState.update { it.copy(isBusy = false) }
-        return@launch
-      }
+      val caps = AiChatV2Capabilities.resolve(plugin, config)
 
       // Capability gate: never send an attachment the provider cannot handle.
       for (attachment in attachments) {
-        val missing = CapabilityGate.missingCapability(plugin.resolvedCapabilities(config), attachment)
+        val missing = CapabilityGate.missingCapability(caps, attachment)
         if (missing != null) {
           addError(CapabilityGate.unavailableMessage(plugin.displayName, missing))
           _uiState.update { it.copy(isBusy = false) }
@@ -192,28 +236,85 @@ class AiChatViewModel(
         }
       }
 
-      val engine = AiAgent.newEngine(plugin, config, projectRoot, state.mode,
-        permissions = permissions)
-      currentEngine = engine
+      // Contexto automático: os chips são consumidos nesta mensagem —
+      // prefixados ao texto que o modelo vê — e depois limpos.
+      val chips = _uiState.value.chips
+      val fullText = AiChatV2Context.formatContextBlock(chips) + trimmed
 
-      _uiState.update {
-        it.copy(
+      _uiState.update { current ->
+        val withUser = current.copy(
           pendingAttachments = emptyList(),
-          messages = it.messages + ChatListItem.User(trimmed, attachments)
+          chips = emptyList(),
+          messages = current.messages + ChatListItem.User(trimmed, attachments)
         )
+        if (chips.isEmpty()) {
+          withUser
+        } else {
+          withUser.copy(
+            messages = withUser.messages + ChatListItem.Status(
+              app.getString(
+                R.string.ai_chat_v2_context_attached,
+                chips.joinToString(", ") { chip -> chip.label }
+              )
+            )
+          )
+        }
       }
 
       try {
-        engine.run(ChatMessage(Role.USER, trimmed, attachments)).collect { event ->
-          handleEvent(event)
+        var targetPlugin = plugin
+        var targetConfig = config
+        val tried = mutableSetOf(config.configId)
+        while (true) {
+          val engine = AiAgent.newEngine(
+            targetPlugin, targetConfig, projectRoot, state.mode,
+            permissions = permissions
+          )
+          currentEngine = engine
+          var failure: AgentEvent.Failed? = null
+          try {
+            engine.run(ChatMessage(Role.USER, fullText, attachments)).collect { event ->
+              if (event is AgentEvent.Failed) failure = event else handleEvent(event)
+            }
+          } catch (e: CancellationException) {
+            throw e
+          } catch (e: Exception) {
+            failure = AgentEvent.Failed(
+              e.message ?: app.getString(R.string.aiagent_error_generic)
+            )
+          } finally {
+            currentEngine = null
+          }
+
+          val failed = failure ?: break
+          val reason = AiChatV2Fallback.classify(failed.error)
+          val next = reason?.let {
+            AiChatV2Fallback.candidates(AiAgent.configStore(), targetConfig.configId)
+              .firstOrNull { candidate -> candidate.config.configId !in tried }
+          }
+          if (next == null) {
+            handleEvent(failed)
+            break
+          }
+          tried += next.config.configId
+          targetPlugin = next.plugin
+          targetConfig = next.config
+          appendItem(
+            ChatListItem.Status(
+              app.getString(
+                R.string.ai_chat_v2_fallback_switched,
+                next.config.displayName,
+                reasonLabel(reason)
+              )
+            )
+          )
+          // A sessão acompanha a troca: seletor, gating e a próxima
+          // mensagem usam a nova entrada.
+          _uiState.update {
+            it.copy(activeProvider = next.plugin, activeConfigId = next.config.configId)
+          }
+          refreshCapabilities()
         }
-      } catch (e: CancellationException) {
-        throw e
-      } catch (e: Exception) {
-        appendItem(
-          ChatListItem.Error(e.message ?: app.getString(R.string.aiagent_error_generic))
-        )
-        finalizeStreaming()
       } finally {
         currentEngine = null
         _uiState.update { it.copy(isBusy = false) }
@@ -223,6 +324,11 @@ class AiChatViewModel(
 
   /** Cancels the in-flight engine run. */
   fun cancel() {
+    // Unblocks the engine if it is suspended on a diff review.
+    synchronized(diffDecisions) {
+      diffDecisions.values.forEach { it.complete(EditReviewDecision.Discard) }
+      diffDecisions.clear()
+    }
     currentEngine?.cancel()
     currentJob?.cancel()
     finalizeStreaming()
@@ -235,13 +341,139 @@ class AiChatViewModel(
     appendItem(ChatListItem.Status(text))
   }
 
-  private fun resolveInitialProvider(): AiProviderPlugin? {
-    val config = AiAgent.configStore().getActiveConfig()
-    val registry = AiAgent.registry()
-    if (config != null) {
-      registry.get(config.providerId)?.let { return it }
+  /**
+   * Seeds the automatic context chips (open file + current selection).
+   * Called once by the host with the panel/activity arguments.
+   */
+  fun setInitialContext(filePath: String?, selection: String?) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val app = getApplication<Application>()
+      val chips = mutableListOf<ChatContextChip>()
+      if (!filePath.isNullOrBlank()) {
+        val file = File(filePath)
+        if (file.isFile && file.length() <= MAX_CHIP_FILE_BYTES) {
+          val content = runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
+          if (!content.isNullOrBlank()) {
+            chips += ChatContextChip(
+              AiChatV2Context.CHIP_FILE,
+              ChatContextChip.Kind.FILE,
+              app.getString(R.string.ai_chat_v2_chip_file, file.name),
+              content.take(MAX_CHIP_CHARS)
+            )
+          }
+        }
+      }
+      if (!selection.isNullOrBlank()) {
+        chips += ChatContextChip(
+          AiChatV2Context.CHIP_SELECTION,
+          ChatContextChip.Kind.SELECTION,
+          app.getString(R.string.ai_chat_v2_chip_selection),
+          selection.take(MAX_CHIP_CHARS)
+        )
+      }
+      if (chips.isNotEmpty()) {
+        _uiState.update { it.copy(chips = chips) }
+      }
     }
-    return registry.all().firstOrNull()
+  }
+
+  /**
+   * "Anexar erro": pastes recent build/logcat output as a removable chip.
+   * No-op when there is no build bridge or no recent logs.
+   */
+  fun addErrorChip() {
+    if (_uiState.value.isBusy) return
+    viewModelScope.launch(Dispatchers.IO) {
+      val app = getApplication<Application>()
+      val logs = runCatching {
+        AiAgent.buildBridgeProvider?.get()?.recentLogs(MAX_ERROR_LINES)
+      }.getOrNull().orEmpty()
+      if (logs.isEmpty()) {
+        postStatus(app.getString(R.string.ai_chat_v2_no_build_logs))
+        return@launch
+      }
+      val chip = ChatContextChip(
+        AiChatV2Context.CHIP_ERROR,
+        ChatContextChip.Kind.ERROR,
+        app.getString(R.string.ai_chat_v2_chip_build_error),
+        logs.joinToString("\n").take(MAX_CHIP_CHARS)
+      )
+      _uiState.update { state ->
+        state.copy(chips = state.chips.filterNot { it.id == chip.id } + chip)
+      }
+    }
+  }
+
+  /** Removes a context chip (user tapped its close icon). */
+  fun removeChip(id: String) {
+    _uiState.update { it.copy(chips = it.chips.filterNot { it.id == id }) }
+  }
+
+  /**
+   * Posts a diff-review card and suspends until the user decides
+   * (apply all / some / discard). Runs on the engine's background thread;
+   * the card itself is rendered by the UI from [ChatUiState.messages].
+   */
+  private suspend fun reviewEditDiff(request: EditReviewRequest): EditReviewDecision {
+    val id = "diff-" + UUID.randomUUID().toString()
+    appendItem(
+      ChatListItem.DiffProposal(id, request.path, request.hunks, DiffProposalState.PENDING)
+    )
+    val deferred = CompletableDeferred<EditReviewDecision>()
+    synchronized(diffDecisions) { diffDecisions[id] = deferred }
+    return try {
+      deferred.await()
+    } finally {
+      synchronized(diffDecisions) { diffDecisions.remove(id) }
+    }
+  }
+
+  /**
+   * Called by the UI when the user decides on a diff-review card.
+   * Updates the card's visual state and unblocks the engine.
+   */
+  fun resolveDiffProposal(id: String, decision: EditReviewDecision) {
+    val effective =
+      if (decision is EditReviewDecision.ApplySome && decision.indices.isEmpty()) {
+        EditReviewDecision.Discard
+      } else {
+        decision
+      }
+    val state = when (effective) {
+      EditReviewDecision.ApplyAll -> DiffProposalState.APPLIED
+      is EditReviewDecision.ApplySome -> DiffProposalState.PARTIAL
+      EditReviewDecision.Discard -> DiffProposalState.DISCARDED
+    }
+    _uiState.update { current ->
+      current.copy(
+        messages = current.messages.map {
+          if (it is ChatListItem.DiffProposal && it.id == id) it.copy(state = state) else it
+        }
+      )
+    }
+    synchronized(diffDecisions) { diffDecisions[id] }?.complete(effective)
+  }
+
+  private fun reasonLabel(reason: AiChatV2Fallback.Reason): String {
+    val app = getApplication<Application>()
+    return when (reason) {
+      AiChatV2Fallback.Reason.RATE_LIMITED ->
+        app.getString(R.string.ai_chat_v2_fallback_reason_rate_limit)
+      AiChatV2Fallback.Reason.OVERLOADED ->
+        app.getString(R.string.ai_chat_v2_fallback_reason_overloaded)
+      AiChatV2Fallback.Reason.CONTEXT_OVERFLOW ->
+        app.getString(R.string.ai_chat_v2_fallback_reason_context)
+    }
+  }
+
+  private fun resolveInitialConfig(): Pair<AiProviderPlugin, ProviderConfig>? {
+    val store = AiAgent.configStore()
+    val activeId = store.getActiveConfigId()
+    if (activeId != null) {
+      AiChatV2Providers.resolveConfig(activeId)?.let { return it }
+    }
+    return AiChatV2Providers.listConfigs()
+      .firstNotNullOfOrNull { AiChatV2Providers.resolveConfig(it.configId) }
   }
 
   private fun handleEvent(event: AgentEvent) {
@@ -300,8 +532,7 @@ class AiChatViewModel(
     }
   }
 
-  private fun markToolFinished(name: String, ok: Boolean) {
-    _uiState.update { state ->
+  private fun markToolFinished(name: String, ok: Boolean) {    _uiState.update { state ->
       val messages = state.messages
       val index = messages.indexOfLast {
         it is ChatListItem.ToolEvent && it.name == name && it.ok == null
@@ -323,6 +554,17 @@ class AiChatViewModel(
         state.copy(messages = updated)
       }
     }
+  }
+
+  companion object {
+    /** Arquivos maiores que isso não viram chip de contexto (512 KiB). */
+    const val MAX_CHIP_FILE_BYTES: Long = 512L * 1024
+
+    /** Teto de caracteres por chip de contexto. */
+    const val MAX_CHIP_CHARS: Int = 8000
+
+    /** Linhas de log lidas para o chip "anexar erro". */
+    const val MAX_ERROR_LINES: Int = 120
   }
 }
 
