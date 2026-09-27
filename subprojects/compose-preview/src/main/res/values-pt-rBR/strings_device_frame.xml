@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="device_frame_title">Dispositivo do preview</string>
+  <string name="device_frame_select_device">Escolher dispositivo</string>
+  <string name="device_frame_none">Padrão (sem moldura)</string>
+  <string name="device_frame_multi">Multi-preview</string>
+  <string name="device_frame_folded">Dobrado</string>
+  <string name="device_frame_custom">Personalizado…</string>
+  <string name="device_frame_custom_label">Personalizado (%1$d × %2$d dp, %3$d dpi)</string>
+  <string name="device_frame_width_dp">Largura (dp)</string>
+  <string name="device_frame_height_dp">Altura (dp)</string>
+  <string name="device_frame_density_dpi">Densidade (dpi)</string>
+  <string name="device_frame_portrait">Retrato</string>
+  <string name="device_frame_landscape">Paisagem</string>
+  <string name="device_frame_create">Criar</string>
+  <string name="device_frame_invalid_dimensions">Informe largura, altura e densidade maiores que zero.</string>
+  <string name="device_frame_pixel9">Pixel 9</string>
+  <string name="device_frame_galaxy_s24">Galaxy S24</string>
+  <string name="device_frame_fold6">Galaxy Z Fold 6</string>
+  <string name="device_frame_tablet">Tablet (Tab S6 Lite)</string>
+  <string name="device_frame_watch">Relógio (Wear OS)</string>
+  <string name="device_frame_tv">TV (Android TV)</string>
+  <string name="device_frame_chromebook">Chromebook (redimensionável)</string>
+  <string name="device_frame_preview_title">Preview do layout</string>
+</resources>
