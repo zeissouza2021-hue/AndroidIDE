@@ -93,8 +93,14 @@ class ProjectFileWatcher(
   }
 
   private fun removeObserverLocked(dir: File) {
-    val key = dir.absolutePath
-    observers.remove(key)?.let { runCatching { it.stopWatching() } }
+    // Also drop observers of any subdirectory: deleting a tree fires a single DELETE
+    // for its root, and the child observers would otherwise leak.
+    val rootPath = dir.absolutePath
+    val prefix = "$rootPath/"
+    val keys = observers.keys.filter { it == rootPath || it.startsWith(prefix) }
+    keys.forEach { key ->
+      observers.remove(key)?.let { observer -> runCatching { observer.stopWatching() } }
+    }
   }
 
   private fun handleEvent(event: Int, file: File) {
@@ -103,8 +109,14 @@ class ProjectFileWatcher(
       val deleted = event and FileObserver.DELETE != 0 || event and FileObserver.MOVED_FROM != 0
       val written = event and FileObserver.CLOSE_WRITE != 0
 
-      if (deleted && file.isDirectory) {
-        synchronized(lock) { removeObserverLocked(file) }
+      if (deleted) {
+        // NOTE: File.isDirectory is false after deletion, so match by watched path instead.
+        // This also covers whole subtrees moved/renamed away.
+        synchronized(lock) {
+          if (started && observers.containsKey(file.absolutePath)) {
+            removeObserverLocked(file)
+          }
+        }
         return
       }
 
