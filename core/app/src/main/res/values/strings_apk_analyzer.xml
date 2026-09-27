@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  AndroidIDE is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidIDE is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<resources>
+    <!-- APK Analyzer (v3 tools) -->
+    <string name="apk_analyzer_title">APK Analyzer</string>
+    <string name="apk_analyzer_pick_apk">Open APK</string>
+    <string name="apk_analyzer_compare_with">Compare with…</string>
+    <string name="apk_analyzer_no_apk">Choose an APK file to analyze</string>
+    <string name="apk_analyzer_analyzing">Analyzing APK…</string>
+    <string name="apk_analyzer_tab_overview">Overview</string>
+    <string name="apk_analyzer_tab_manifest">Manifest</string>
+    <string name="apk_analyzer_tab_classes">Classes</string>
+    <string name="apk_analyzer_tab_compare">Compare</string>
+    <string name="apk_analyzer_tab_tips">Tips</string>
+    <string name="apk_analyzer_total_size">Total size</string>
+    <string name="apk_analyzer_download_size">Est. download size</string>
+    <string name="apk_analyzer_files">Files</string>
+    <string name="apk_analyzer_breakdown">Size breakdown</string>
+    <string name="apk_analyzer_manifest_unavailable">AndroidManifest.xml not found or could not be parsed: %1$s</string>
+    <string name="apk_analyzer_dex_files">DEX files</string>
+    <string name="apk_analyzer_search_classes">Search classes…</string>
+    <string name="apk_analyzer_showing_classes">Showing %1$d of %2$d classes</string>
+    <string name="apk_analyzer_compare_hint">Open a second APK to compare it with the first one</string>
+    <string name="apk_analyzer_by_category">By category</string>
+    <string name="apk_analyzer_added">Added</string>
+    <string name="apk_analyzer_removed">Removed</string>
+    <string name="apk_analyzer_changed">Changed</string>
+    <string name="apk_analyzer_no_differences">No differences found.</string>
+    <string name="apk_analyzer_and_more">… and %1$d more</string>
+    <string name="apk_analyzer_classes_count">%1$d classes</string>
+    <string name="apk_analyzer_largest_files">Largest files</string>
+    <string name="apk_analyzer_duplicates">Duplicate files</string>
+    <string name="apk_analyzer_no_duplicates">No duplicate files found</string>
+    <string name="apk_analyzer_suggestions">Suggestions</string>
+    <string name="apk_analyzer_nothing_obvious">Nothing obvious — this APK already looks lean.</string>
+    <string name="apk_analyzer_tip_abis">Native libraries ship for %1$d ABIs (%2$s, %3$s total). Consider an App Bundle or ABI splits so each device downloads a single ABI.</string>
+    <string name="apk_analyzer_tip_png">%1$d PNG(s) in res/ are larger than 100 KB (%2$s total). Converting them to WebP usually saves 25–35%.</string>
+    <string name="apk_analyzer_tip_duplicates">%1$d duplicate file group(s) waste %2$s. Keep a single copy and reference it instead.</string>
+    <string name="apk_analyzer_tip_dex">Code (DEX) is more than half of the APK (%1$s). Enable R8/minifyEnabled with shrinkResources to drop unused code and resources.</string>
+    <string name="apk_analyzer_tip_stored">%1$d large file(s) are stored uncompressed. If they are not loaded via mmap/AssetManager with alignment requirements, letting AAPT compress them shrinks the download size.</string>
+    <string name="apk_analyzer_error">Analysis failed: %1$s</string>
+
+    <string name="apk_analyzer_cat_dex">DEX (code)</string>
+    <string name="apk_analyzer_cat_res">Resources</string>
+    <string name="apk_analyzer_cat_assets">Assets</string>
+    <string name="apk_analyzer_cat_lib">Native libs</string>
+    <string name="apk_analyzer_cat_other">Other</string>
+</resources>

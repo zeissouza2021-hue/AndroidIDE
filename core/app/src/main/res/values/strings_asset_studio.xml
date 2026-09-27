@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  AndroidIDE is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidIDE is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<resources>
+    <!-- Asset Studio (v3 tools) -->
+    <string name="asset_studio_title">Asset Studio</string>
+    <string name="asset_studio_section_source">Source</string>
+    <string name="asset_studio_import_svg">Import SVG</string>
+    <string name="asset_studio_import_image">Import image</string>
+    <string name="asset_studio_paste_xml">Paste vector XML</string>
+    <string name="asset_studio_section_name">Asset name</string>
+    <string name="asset_studio_name_hint">ic_my_icon</string>
+    <string name="asset_studio_name_invalid">Invalid name. Use lowercase letters, digits and underscores.</string>
+    <string name="asset_studio_section_output">Output</string>
+    <string name="asset_studio_output_vector">Vector drawable (res/drawable)</string>
+    <string name="asset_studio_output_png">PNG drawable (res/drawable-nodpi)</string>
+    <string name="asset_studio_output_launcher">Adaptive launcher icon (mipmap-anydpi-v26)</string>
+    <string name="asset_studio_section_launcher_options">Launcher icon options</string>
+    <string name="asset_studio_background_color">Background color</string>
+    <string name="asset_studio_foreground_scale">Foreground scale</string>
+    <string name="asset_studio_section_preview">Preview</string>
+    <string name="asset_studio_import">Import asset</string>
+    <string name="asset_studio_no_source">Choose a source file first</string>
+    <string name="asset_studio_no_project">Open a project first to import assets</string>
+    <string name="asset_studio_no_res_dir">Could not locate the app module res/ directory</string>
+    <string name="asset_studio_png_cannot_be_vector">A bitmap image cannot be converted to a VectorDrawable. Choose PNG drawable or launcher icon output.</string>
+    <string name="asset_studio_svg_parse_error">Could not parse the SVG file: %1$s</string>
+    <string name="asset_studio_vector_invalid">Not a valid VectorDrawable: %1$s</string>
+    <string name="asset_studio_imported">Asset imported to %1$s</string>
+    <string name="asset_studio_import_failed">Import failed: %1$s</string>
+    <string name="asset_studio_paste_xml_title">Paste vector XML</string>
+    <string name="asset_studio_file_exists">File already exists and was overwritten: %1$s</string>
+    <string name="asset_studio_status_ready">Ready</string>
+    <string name="asset_studio_source_loaded">Source loaded: %1$s</string>
+    <string name="asset_studio_wait_loading">Loading…</string>
+</resources>
