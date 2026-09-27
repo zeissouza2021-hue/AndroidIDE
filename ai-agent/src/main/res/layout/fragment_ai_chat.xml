@@ -195,9 +195,8 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:hintEnabled="false"
-            app:boxBackgroundMode="outline"
-            app:boxCornerFamily="rounded">
+            app:hintEnabled="false"
+            app:boxBackgroundMode="outline">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/message_input"
