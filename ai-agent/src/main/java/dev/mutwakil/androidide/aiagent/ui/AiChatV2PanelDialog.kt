@@ -44,6 +44,7 @@ import dev.mutwakil.androidide.aiagent.AiAgent
 import dev.mutwakil.androidide.aiagent.R
 import dev.mutwakil.androidide.aiagent.model.ProviderConfig
 import java.lang.ref.WeakReference
+import java.util.UUID
 import kotlinx.coroutines.launch
 
 /**
@@ -143,8 +144,14 @@ class AiChatV2PanelDialog : DialogFragment() {
         }
     }
 
+    override fun onStop() {
+        persistGeometry()
+        super.onStop()
+    }
+
     override fun onDismiss(dialog: android.content.DialogInterface) {
         unregisterWindow(this)
+        runCatching { AiWindowPersistence(requireContext()).remove(stableWindowId()) }
         super.onDismiss(dialog)
     }
 
@@ -171,6 +178,11 @@ class AiChatV2PanelDialog : DialogFragment() {
 
     private fun restoreGeometry(saved: Bundle?) {
         val dm = resources.displayMetrics
+        val persisted = if (saved == null) {
+            runCatching { AiWindowPersistence(requireContext()).load(stableWindowId()) }.getOrNull()
+        } else {
+            null
+        }
         if (saved != null) {
             winX = saved.getInt(KEY_X)
             winY = saved.getInt(KEY_Y)
@@ -181,6 +193,15 @@ class AiChatV2PanelDialog : DialogFragment() {
             savedHeight = saved.getInt(KEY_SAVED_H)
             @Suppress("DEPRECATION")
             savedRect = saved.getParcelable(KEY_RECT)
+        } else if (persisted != null) {
+            winX = persisted.x
+            winY = persisted.y
+            winW = persisted.width
+            winH = persisted.height
+            isMaximized = persisted.maximized
+            isMinimized = persisted.minimized
+            savedHeight = persisted.savedHeight
+            savedRect = persisted.restoreRect
         } else {
             // Tamanho/posição inicial: painel generoso à direita, centralizado
             // verticalmente, com margem da borda da tela.
@@ -277,7 +298,10 @@ class AiChatV2PanelDialog : DialogFragment() {
                         )
                         return true
                     }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> return true
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        persistGeometry()
+                        return true
+                    }
                 }
                 return false
             }
@@ -316,7 +340,10 @@ class AiChatV2PanelDialog : DialogFragment() {
                         applyGeometry()
                         return true
                     }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> return true
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        persistGeometry()
+                        return true
+                    }
                 }
                 return false
             }
@@ -355,6 +382,7 @@ class AiChatV2PanelDialog : DialogFragment() {
         }
         applyMinimizedUi()
         applyGeometry()
+        persistGeometry()
     }
 
     private fun applyMinimizedUi() {
@@ -385,6 +413,7 @@ class AiChatV2PanelDialog : DialogFragment() {
         }
         updateMaximizeIcon()
         applyGeometry()
+        persistGeometry()
     }
 
     private fun updateMaximizeIcon() {
@@ -395,6 +424,32 @@ class AiChatV2PanelDialog : DialogFragment() {
         maximizeButton.contentDescription = getString(
             if (isMaximized) R.string.ai_chat_v2_restore else R.string.ai_chat_v2_maximize
         )
+    }
+
+    private fun stableWindowId(): String {
+        val args = requireArguments()
+        val existing = args.getString(ARG_WINDOW_ID)
+        if (!existing.isNullOrBlank()) return existing
+        return UUID.randomUUID().toString().also { args.putString(ARG_WINDOW_ID, it) }
+    }
+
+    private fun persistGeometry() {
+        if (!isAdded) return
+        runCatching {
+            AiWindowPersistence(requireContext()).save(
+                stableWindowId(),
+                AiWindowGeometry(
+                    x = winX,
+                    y = winY,
+                    width = winW,
+                    height = winH,
+                    maximized = isMaximized,
+                    minimized = isMinimized,
+                    savedHeight = savedHeight,
+                    restoreRect = savedRect
+                )
+            )
+        }
     }
 
     /** Injeta contexto do editor (arquivo/seleção) na conversa desta janela. */
@@ -490,6 +545,7 @@ class AiChatV2PanelDialog : DialogFragment() {
         private const val ARG_PROJECT_PATH = "project_path"
         private const val ARG_FILE_PATH = "file_path"
         private const val ARG_SELECTION = "selection"
+        private const val ARG_WINDOW_ID = "window_id"
 
         private const val KEY_X = "win_x"
         private const val KEY_Y = "win_y"
@@ -515,6 +571,7 @@ class AiChatV2PanelDialog : DialogFragment() {
                 putString(ARG_PROJECT_PATH, projectPath)
                 putString(ARG_FILE_PATH, initialFilePath)
                 putString(ARG_SELECTION, initialSelection)
+                putString(ARG_WINDOW_ID, UUID.randomUUID().toString())
             }
         }
 
