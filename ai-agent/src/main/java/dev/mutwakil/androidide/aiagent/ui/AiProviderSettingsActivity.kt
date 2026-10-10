@@ -330,7 +330,17 @@ class AiProviderSettingsActivity : AppCompatActivity() {
             tvResult.setText(R.string.ai_chat_v2_provider_validation)
             return@setOnClickListener
           }
-          AiAgent.configStore().saveProviderConfig(config)
+          try {
+            AiAgent.configStore().saveProviderConfig(config)
+          } catch (e: Exception) {
+            // A falha do Keystore deve ser apresentada como erro recuperável,
+            // nunca derrubar a tela nem fingir que a credencial foi salva.
+            setAdvancedExpanded(true)
+            tvResult.isVisible = true
+            tvResult.text = e.message
+              ?: getString(R.string.ai_chat_v2_provider_validation)
+            return@setOnClickListener
+          }
           Snackbar.make(
             findViewById(R.id.aiagent_provider_list),
             R.string.ai_chat_v2_provider_saved,
