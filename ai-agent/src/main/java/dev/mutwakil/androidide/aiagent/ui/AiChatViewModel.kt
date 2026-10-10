@@ -671,13 +671,14 @@ class AiChatViewModel(
 /** Factory that supplies the [Application] and optional project path to [AiChatViewModel]. */
 class AiChatViewModelFactory(
   private val application: Application,
-  private val projectPath: String?
+  private val projectPath: String?,
+  private val windowId: String? = null
 ) : ViewModelProvider.Factory {
 
   @Suppress("UNCHECKED_CAST")
   override fun <T : ViewModel> create(modelClass: Class<T>): T {
     if (modelClass.isAssignableFrom(AiChatViewModel::class.java)) {
-      return AiChatViewModel(application, projectPath) as T
+      return AiChatViewModel(application, projectPath, windowId) as T
     }
     throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
   }
