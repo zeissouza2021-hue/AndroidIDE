@@ -38,9 +38,9 @@ import dev.mutwakil.androidide.aiagent.model.ProviderConfig
  *   fallback flag, capability overrides, the set of configured ids and the
  *   active config id) lives in a regular [SharedPreferences] file (`aiagent_prefs`).
  *
- * Legacy note: versions before this change stored `extraHeaders` in the
- * plain prefs file; reads fall back to that key so existing configs are
- * not lost, and the plaintext copy is removed on the next save.
+ * Legacy plaintext headers are migrated into encrypted storage at startup
+ * when encryption is available. If it is unavailable, legacy plaintext
+ * secret values are removed rather than reused or retained in plain prefs.
  *
  * Per-entry keys are namespaced as `provider.<configId>.<field>`.
  * Entries stored before v2 used the provider id as the key; since default
@@ -77,7 +77,33 @@ class ProviderConfigStore(context: Context) {
         }
     }
 
+    init {
+        migrateLegacyPlaintextHeaders()
+    }
+
     private fun prefix(id: String) = "provider.$id."
+
+    /**
+     * Migrate old extraHeaders values out of ordinary preferences. If secure
+     * storage is unavailable or a migration fails, discard the plaintext
+     * copy rather than silently using it as a credential store.
+     */
+    private fun migrateLegacyPlaintextHeaders() {
+        val legacy = prefs.all.entries.filter { (key, value) ->
+            key.startsWith("provider.") && key.endsWith(".extraHeaders") && value is String
+        }
+        for ((key, value) in legacy) {
+            val secure = secrets
+            val moved = secure != null && runCatching {
+                secure.edit().putString(key, value as String).commit()
+            }.getOrDefault(false)
+            // Always remove the insecure copy, even if secure migration fails.
+            prefs.edit().remove(key).commit()
+            if (!moved) {
+                Log.w(TAG, "Cabeçalhos legados descartados porque não foi possível criptografá-los")
+            }
+        }
+    }
 
     /** Inserts or replaces the configuration entry [config.configId]. */
     fun saveProviderConfig(config: ProviderConfig) {
