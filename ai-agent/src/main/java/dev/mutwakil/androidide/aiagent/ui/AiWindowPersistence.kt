@@ -10,6 +10,13 @@ package dev.mutwakil.androidide.aiagent.ui
 
 import android.content.Context
 import android.graphics.Rect
+import dev.mutwakil.androidide.aiagent.model.Attachment
+import dev.mutwakil.androidide.aiagent.model.AttachmentType
+import dev.mutwakil.androidide.aiagent.model.ChatMessage
+import dev.mutwakil.androidide.aiagent.model.Role
+import java.io.File
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Persisted geometry for one floating AI Chat window.
@@ -27,6 +34,12 @@ internal data class AiWindowGeometry(
     val minimized: Boolean,
     val savedHeight: Int,
     val restoreRect: Rect?
+)
+
+/** A model turn plus the text shown in its chat bubble. */
+internal data class AiPersistedTurn(
+    val message: ChatMessage,
+    val displayText: String
 )
 
 /** Small persistence boundary for floating-window placement and window state. */
@@ -66,6 +79,75 @@ internal class AiWindowPersistence(context: Context) {
 
     fun loadActiveConfigId(windowId: String): String? =
         prefs.getString(prefix(windowId) + "active_config_id", null)
+
+    fun loadConversation(windowId: String): List<AiPersistedTurn> {
+        val raw = prefs.getString(prefix(windowId) + "conversation", null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(raw)
+            buildList {
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val role = runCatching { Role.valueOf(item.optString("role")) }.getOrNull()
+                        ?: continue
+                    if (role != Role.USER && role != Role.ASSISTANT) continue
+                    val attachments = mutableListOf<Attachment>()
+                    val attachmentArray = item.optJSONArray("attachments") ?: JSONArray()
+                    val unavailable = mutableListOf<String>()
+                    for (attachmentIndex in 0 until attachmentArray.length()) {
+                        val stored = attachmentArray.optJSONObject(attachmentIndex) ?: continue
+                        val path = stored.optString("path")
+                        val file = path.takeIf { it.isNotBlank() }?.let(::File)
+                        val type = runCatching {
+                            AttachmentType.valueOf(stored.optString("type"))
+                        }.getOrNull()
+                        if (file == null || !file.isFile || type == null) {
+                            stored.optString("displayName").takeIf { it.isNotBlank() }
+                                ?.let(unavailable::add)
+                            continue
+                        }
+                        attachments += Attachment(
+                            type = type,
+                            file = file,
+                            mimeType = stored.optString("mimeType"),
+                            displayName = stored.optString("displayName", file.name)
+                        )
+                    }
+                    var text = item.optString("text")
+                    if (unavailable.isNotEmpty()) {
+                        text += "\\n\\n[Anexos indisponíveis após reiniciar: " +
+                            unavailable.joinToString(", ") + "]"
+                    }
+                    val message = ChatMessage(role, text, attachments)
+                    add(AiPersistedTurn(message, item.optString("displayText", text)))
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveConversation(windowId: String, turns: List<AiPersistedTurn>) {
+        val selected = turns.takeLast(MAX_PERSISTED_TURNS)
+        val array = JSONArray()
+        selected.forEach { turn ->
+            val message = turn.message
+            val item = JSONObject()
+                .put("role", message.role.name)
+                .put("text", message.text)
+                .put("displayText", turn.displayText)
+            val attachments = JSONArray()
+            message.attachments.forEach { attachment ->
+                attachments.put(
+                    JSONObject()
+                        .put("type", attachment.type.name)
+                        .put("path", attachment.file.absolutePath)
+                        .put("mimeType", attachment.mimeType)
+                        .put("displayName", attachment.displayName)
+                )
+            }
+            item.put("attachments", attachments)
+            array.put(item)
+        }
+        prefs.edit().putString(prefix(windowId) + "conversation", array.toString()).apply()
+    }
 
     fun saveActiveConfigId(windowId: String, configId: String?) {
         val key = prefix(windowId) + "active_config_id"
@@ -115,5 +197,6 @@ internal class AiWindowPersistence(context: Context) {
 
     private companion object {
         const val PREFS_NAME = "aiagent_window_state_v1"
+        const val MAX_PERSISTED_TURNS = 40
     }
 }
