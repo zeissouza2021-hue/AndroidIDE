@@ -114,7 +114,7 @@ internal class AiWindowPersistence(context: Context) {
                     }
                     var text = item.optString("text")
                     if (unavailable.isNotEmpty()) {
-                        text += "\\n\\n[Anexos indisponíveis após reiniciar: " +
+                        text += "\n\n[Anexos indisponíveis após reiniciar: " +
                             unavailable.joinToString(", ") + "]"
                     }
                     val message = ChatMessage(role, text, attachments)
@@ -125,7 +125,7 @@ internal class AiWindowPersistence(context: Context) {
     }
 
     fun saveConversation(windowId: String, turns: List<AiPersistedTurn>) {
-        val selected = turns.takeLast(MAX_PERSISTED_TURNS)
+        val selected = turns.takeLast(MAX_PERSISTED_MESSAGES)
         val array = JSONArray()
         selected.forEach { turn ->
             val message = turn.message
