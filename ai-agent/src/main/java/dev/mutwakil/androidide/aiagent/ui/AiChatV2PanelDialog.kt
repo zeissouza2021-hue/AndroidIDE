@@ -529,6 +529,18 @@ class AiChatV2PanelDialog : DialogFragment() {
         chatFragment: AiChatFragment,
         entries: List<ProviderConfig>
     ) {
+        val persistence = AiWindowPersistence(requireContext())
+        val windowId = stableWindowId()
+        val savedConfigId = runCatching {
+            persistence.loadActiveConfigId(windowId)
+        }.getOrNull()
+        if (!savedConfigId.isNullOrBlank() &&
+            entries.any { it.configId == savedConfigId } &&
+            chatFragment.viewModel.uiState.value.activeConfigId != savedConfigId
+        ) {
+            chatFragment.setActiveConfig(savedConfigId)
+        }
+
         val options = entries.map { ModelOption(it) }
         selector.setAdapter(
             ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, options)
@@ -542,6 +554,9 @@ class AiChatV2PanelDialog : DialogFragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 chatFragment.viewModel.uiState.collect { state ->
+                    state.activeConfigId?.let { configId ->
+                        persistence.saveActiveConfigId(windowId, configId)
+                    }
                     val active = entries.firstOrNull { it.configId == state.activeConfigId }
                     val label = labelFor(active)
                     if (selector.text.toString() != label) {
