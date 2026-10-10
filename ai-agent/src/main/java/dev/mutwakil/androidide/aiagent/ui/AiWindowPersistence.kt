@@ -92,9 +92,11 @@ internal class AiWindowPersistence(context: Context) {
 
     fun remove(windowId: String) {
         val p = prefix(windowId)
-        prefs.edit().apply {
-            prefs.all.keys.filter { it.startsWith(p) }.forEach(::remove)
-        }.apply()
+        val editor = prefs.edit()
+        prefs.all.keys.filter { it.startsWith(p) }.forEach { key ->
+            editor.remove(key)
+        }
+        editor.apply()
     }
 
     private fun prefix(windowId: String) = "window.$windowId."
