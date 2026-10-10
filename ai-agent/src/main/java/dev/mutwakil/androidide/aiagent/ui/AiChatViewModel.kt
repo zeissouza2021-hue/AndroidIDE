@@ -98,7 +98,8 @@ data class ChatUiState(
  */
 class AiChatViewModel(
   application: Application,
-  projectPath: String?
+  projectPath: String?,
+  private val windowId: String? = null
 ) : AndroidViewModel(application) {
 
   private val projectRoot: File =
@@ -108,6 +109,7 @@ class AiChatViewModel(
   val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
   private val permissions = PermissionManager()
+  private val windowPersistence = windowId?.let { AiWindowPersistence(application) }
 
   /**
    * Set by the Fragment. Must show a confirmation dialog on the main thread and
@@ -119,7 +121,7 @@ class AiChatViewModel(
   private var currentJob: Job? = null
 
   /** Conversation transcript owned by this ViewModel/window, not the global provider store. */
-  private val conversationHistory = mutableListOf<ChatMessage>()
+  private val conversationHistory = mutableListOf<AiPersistedTurn>()
 
   /** Pending diff reviews: card id -> decision the engine is suspended on. */
   private val diffDecisions = mutableMapOf<String, CompletableDeferred<EditReviewDecision>>()
@@ -139,7 +141,36 @@ class AiChatViewModel(
         activeConfigId = initial?.second?.configId
       )
     }
+    if (!windowId.isNullOrBlank()) {
+      conversationHistory.addAll(
+        runCatching { windowPersistence?.loadConversation(windowId).orEmpty() }
+          .getOrDefault(emptyList())
+      )
+      val restoredMessages = conversationHistory.mapNotNull { turn ->
+        when (turn.message.role) {
+          Role.USER -> ChatListItem.User(turn.displayText, turn.message.attachments)
+          Role.ASSISTANT -> ChatListItem.Assistant(turn.displayText, isStreaming = false)
+          else -> null
+        }
+      }
+      if (restoredMessages.isNotEmpty()) {
+        _uiState.update { it.copy(messages = restoredMessages) }
+      }
+    }
     refreshCapabilities()
+  }
+
+  private fun persistConversation() {
+    val id = windowId ?: return
+    runCatching {
+      windowPersistence?.saveConversation(id, conversationHistory)
+    }
+  }
+
+  private fun trimConversationHistory() {
+    while (conversationHistory.size > MAX_HISTORY_MESSAGES) {
+      conversationHistory.removeAt(0)
+    }
   }
 
   /**
@@ -248,8 +279,9 @@ class AiChatViewModel(
       val currentMessage = ChatMessage(Role.USER, fullText, attachments)
       // Copy prior turns before adding the current turn. Every fallback attempt
       // receives the same transcript and cannot duplicate the user's message.
-      val priorMessages = conversationHistory.toList()
-      conversationHistory.add(currentMessage)
+      val priorMessages = conversationHistory.takeLast(MAX_HISTORY_MESSAGES).map { it.message }
+      conversationHistory.add(AiPersistedTurn(currentMessage, trimmed))
+      persistConversation()
 
       _uiState.update { current ->
         val withUser = current.copy(
@@ -366,11 +398,19 @@ class AiChatViewModel(
           refreshCapabilities()
         }
         if (successfulReply != null) {
-          conversationHistory.add(ChatMessage(Role.ASSISTANT, successfulReply.orEmpty()))
-        } else if (terminalFailure != null) {
+          val reply = successfulReply.orEmpty()
           conversationHistory.add(
-            ChatMessage(Role.ASSISTANT, "A execução falhou: " + terminalFailure.orEmpty())
+            AiPersistedTurn(ChatMessage(Role.ASSISTANT, reply), reply)
           )
+          trimConversationHistory()
+          persistConversation()
+        } else if (terminalFailure != null) {
+          val errorReply = "A execução falhou: " + terminalFailure.orEmpty()
+          conversationHistory.add(
+            AiPersistedTurn(ChatMessage(Role.ASSISTANT, errorReply), errorReply)
+          )
+          trimConversationHistory()
+          persistConversation()
         }
       } finally {
         currentEngine = null
@@ -622,6 +662,9 @@ class AiChatViewModel(
 
     /** Linhas de log lidas para o chip "anexar erro". */
     const val MAX_ERROR_LINES: Int = 120
+
+    /** Limite de turnos usados como contexto e persistidos por janela. */
+    private const val MAX_HISTORY_MESSAGES: Int = 40
   }
 }
 
