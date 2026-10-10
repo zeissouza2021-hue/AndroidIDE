@@ -380,7 +380,7 @@ class DependencyUpdaterDialog(
         // Parse the library declaration by its actual coordinates instead of
         // assuming a fixed TOML property order or a one-line declaration.
         val versionRefPattern = Regex(
-            """"([a-zA-Z0-9_-]+)"\s*=\s*\{\s*group\s*=\s*"([^"]+)"\s*,\s*name\s*=\s*"([^"]+)"\s*,\s*version\.ref\s*=\s*"([^"]+)"""
+            """([a-zA-Z0-9_-]+)\s*=\s*\{\s*group\s*=\s*"([^"]+)"\s*,\s*name\s*=\s*"([^"]+)"\s*,\s*version\.ref\s*=\s*"([^"]+)"""
         )
         val versionRefMatch = versionRefPattern.find(original)?.takeIf {
             it.groupValues[2] == dependency.group && it.groupValues[3] == dependency.name
