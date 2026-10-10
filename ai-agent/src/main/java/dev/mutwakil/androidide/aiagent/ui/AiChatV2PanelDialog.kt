@@ -212,6 +212,32 @@ class AiChatV2PanelDialog : DialogFragment() {
             winX = dm.widthPixels - winW - (12 * density).toInt()
             winY = ((dm.heightPixels - winH) / 2).coerceAtLeast(0)
         }
+
+        // Clamp geometry restored from an older screen size/density so the
+        // title bar and resize controls remain reachable after rotation or
+        // a display-size change.
+        val maxWidth = maxW().coerceAtLeast(minW())
+        val maxHeight = maxH().coerceAtLeast(minH())
+        winW = winW.coerceIn(minW(), maxWidth)
+        winH = winH.coerceIn(minH(), maxHeight)
+        savedRect?.let { rect ->
+            val restoreWidth = rect.width().coerceIn(minW(), maxWidth)
+            val restoreHeight = rect.height().coerceIn(minH(), maxHeight)
+            val left = rect.left.coerceIn(0, (dm.widthPixels - restoreWidth).coerceAtLeast(0))
+            val top = rect.top.coerceIn(0, (dm.heightPixels - restoreHeight).coerceAtLeast(0))
+            savedRect = Rect(left, top, left + restoreWidth, top + restoreHeight)
+        }
+        if (isMaximized) {
+            val margin = (8 * dm.density).toInt()
+            winX = margin
+            winY = margin
+            winW = (dm.widthPixels - 2 * margin).coerceAtLeast(minW())
+            winH = (dm.heightPixels - 2 * margin).coerceAtLeast(minH())
+        } else {
+            val minVisible = (72 * dm.density).toInt()
+            winX = winX.coerceIn(-(winW - minVisible), dm.widthPixels - minVisible)
+            winY = winY.coerceIn(0, (dm.heightPixels - minH()).coerceAtLeast(0))
+        }
     }
 
     /** Janela flutuante livre: posição/tamanho explícitos, sem dim, não-modal. */
