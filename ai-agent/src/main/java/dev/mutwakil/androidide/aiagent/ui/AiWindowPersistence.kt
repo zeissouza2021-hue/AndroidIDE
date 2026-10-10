@@ -64,6 +64,18 @@ internal class AiWindowPersistence(context: Context) {
         )
     }
 
+    fun loadActiveConfigId(windowId: String): String? =
+        prefs.getString(prefix(windowId) + "active_config_id", null)
+
+    fun saveActiveConfigId(windowId: String, configId: String?) {
+        val key = prefix(windowId) + "active_config_id"
+        if (configId.isNullOrBlank()) {
+            prefs.edit().remove(key).apply()
+        } else {
+            prefs.edit().putString(key, configId).apply()
+        }
+    }
+
     fun save(windowId: String, geometry: AiWindowGeometry) {
         val p = prefix(windowId)
         prefs.edit().apply {
