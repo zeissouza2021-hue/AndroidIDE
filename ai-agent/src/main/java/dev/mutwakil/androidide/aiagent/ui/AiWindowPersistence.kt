@@ -10,6 +10,7 @@ package dev.mutwakil.androidide.aiagent.ui
 
 import android.content.Context
 import android.graphics.Rect
+import dev.mutwakil.androidide.aiagent.model.AgentMode
 import dev.mutwakil.androidide.aiagent.model.Attachment
 import dev.mutwakil.androidide.aiagent.model.AttachmentType
 import dev.mutwakil.androidide.aiagent.model.ChatMessage
@@ -79,6 +80,15 @@ internal class AiWindowPersistence(context: Context) {
 
     fun loadActiveConfigId(windowId: String): String? =
         prefs.getString(prefix(windowId) + "active_config_id", null)
+
+    fun loadMode(windowId: String): AgentMode? =
+        prefs.getString(prefix(windowId) + "mode", null)?.let { stored ->
+            runCatching { AgentMode.valueOf(stored) }.getOrNull()
+        }
+
+    fun saveMode(windowId: String, mode: AgentMode) {
+        prefs.edit().putString(prefix(windowId) + "mode", mode.name).apply()
+    }
 
     fun loadConversation(windowId: String): List<AiPersistedTurn> {
         val raw = prefs.getString(prefix(windowId) + "conversation", null) ?: return emptyList()
