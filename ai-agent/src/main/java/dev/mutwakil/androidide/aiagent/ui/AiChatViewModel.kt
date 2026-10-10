@@ -141,6 +141,12 @@ class AiChatViewModel(
         activeConfigId = initial?.second?.configId
       )
     }
+    val persistedMode = windowId?.let { id ->
+      runCatching { windowPersistence?.loadMode(id) }.getOrNull()
+    }
+    if (persistedMode != null) {
+      _uiState.update { it.copy(mode = persistedMode) }
+    }
     if (!windowId.isNullOrBlank()) {
       conversationHistory.addAll(
         runCatching { windowPersistence?.loadConversation(windowId).orEmpty() }
@@ -221,6 +227,9 @@ class AiChatViewModel(
   fun setMode(mode: AgentMode) {
     if (_uiState.value.isBusy) return
     _uiState.update { it.copy(mode = mode) }
+    windowId?.let { id ->
+      runCatching { windowPersistence?.saveMode(id, mode) }
+    }
   }
 
   fun addPendingAttachment(attachment: Attachment) {
