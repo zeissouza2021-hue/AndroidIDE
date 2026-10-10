@@ -592,7 +592,12 @@ class AiChatViewModel(
       is AgentEvent.ToolFinished -> markToolFinished(event.name, event.ok)
       is AgentEvent.Completed -> {
         finalizeStreaming()
-        if (event.summary.isNotBlank()) appendItem(ChatListItem.Status(event.summary))
+        // In CHAT mode the streamed assistant bubble already contains the
+        // complete response. Repeating it as a status row duplicated every
+        // answer and polluted the transcript sent on later turns.
+        if (_uiState.value.mode == AgentMode.AGENT && event.summary.isNotBlank()) {
+          appendItem(ChatListItem.Status(event.summary))
+        }
       }
       is AgentEvent.Failed -> {
         finalizeStreaming()
