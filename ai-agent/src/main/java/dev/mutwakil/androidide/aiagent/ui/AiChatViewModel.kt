@@ -118,6 +118,9 @@ class AiChatViewModel(
   private var currentEngine: AgentEngine? = null
   private var currentJob: Job? = null
 
+  /** Conversation transcript owned by this ViewModel/window, not the global provider store. */
+  private val conversationHistory = mutableListOf<ChatMessage>()
+
   /** Pending diff reviews: card id -> decision the engine is suspended on. */
   private val diffDecisions = mutableMapOf<String, CompletableDeferred<EditReviewDecision>>()
 
@@ -242,6 +245,27 @@ class AiChatViewModel(
       // prefixados ao texto que o modelo vê — e depois limpos.
       val chips = _uiState.value.chips
       val fullText = AiChatV2Context.formatContextBlock(chips) + trimmed
+      val currentMessage = ChatMessage(Role.USER, fullText, attachments)
+      // Copy prior turns before adding the current turn. Every fallback attempt
+      // receives the same transcript and cannot duplicate the user's message.
+      val priorMessages = conversationHistory.toList().map { previous ->
+        if (previous.attachments.isEmpty()) {
+          previous
+        } else {
+          val supported = previous.attachments.filter {
+            CapabilityGate.missingCapability(caps, it) == null
+          }
+          val omitted = previous.attachments - supported.toSet()
+          previous.copy(
+            text = if (omitted.isEmpty()) previous.text else {
+              previous.text + "\n\n[Anexos anteriores omitidos para este modelo: " +
+                omitted.joinToString(", ") { it.displayName } + "]"
+            },
+            attachments = supported
+          )
+        }
+      }
+      conversationHistory.add(currentMessage)
 
       _uiState.update { current ->
         val withUser = current.copy(
@@ -266,6 +290,8 @@ class AiChatViewModel(
       try {
         var targetPlugin = plugin
         var targetConfig = config
+        var successfulReply: String? = null
+        var terminalFailure: String? = null
         val tried = mutableSetOf(config.configId)
         while (true) {
           val engine = AiAgent.newEngine(
@@ -274,8 +300,15 @@ class AiChatViewModel(
           )
           currentEngine = engine
           var failure: AgentEvent.Failed? = null
+          val streamedReply = StringBuilder()
+          var completedReply: String? = null
           try {
-            engine.run(ChatMessage(Role.USER, fullText, attachments)).collect { event ->
+            engine.run(currentMessage, priorMessages).collect { event ->
+              when (event) {
+                is AgentEvent.AssistantDelta -> streamedReply.append(event.text)
+                is AgentEvent.Completed -> completedReply = event.summary
+                else -> Unit
+              }
               if (event is AgentEvent.Failed) failure = event else handleEvent(event)
             }
           } catch (e: CancellationException) {
@@ -288,13 +321,26 @@ class AiChatViewModel(
             currentEngine = null
           }
 
-          val failed = failure ?: break
+          val failed = failure
+          if (failed == null) {
+            successfulReply = completedReply ?: streamedReply.toString()
+            break
+          }
           val reason = AiChatV2Fallback.classify(failed.error)
           val next = reason?.let {
             AiChatV2Fallback.candidates(AiAgent.configStore(), targetConfig.configId)
-              .firstOrNull { candidate -> candidate.config.configId !in tried }
+              .firstOrNull { candidate ->
+                candidate.config.configId !in tried &&
+                  attachments.all { attachment ->
+                    CapabilityGate.missingCapability(
+                      AiChatV2Capabilities.resolve(candidate.plugin, candidate.config),
+                      attachment
+                    ) == null
+                  }
+              }
           }
           if (next == null) {
+            terminalFailure = failed.error
             handleEvent(failed)
             break
           }
@@ -316,6 +362,13 @@ class AiChatViewModel(
             it.copy(activeProvider = next.plugin, activeConfigId = next.config.configId)
           }
           refreshCapabilities()
+        }
+        if (successfulReply != null) {
+          conversationHistory.add(ChatMessage(Role.ASSISTANT, successfulReply.orEmpty()))
+        } else if (terminalFailure != null) {
+          conversationHistory.add(
+            ChatMessage(Role.ASSISTANT, "A execução falhou: " + terminalFailure.orEmpty())
+          )
         }
       } finally {
         currentEngine = null
