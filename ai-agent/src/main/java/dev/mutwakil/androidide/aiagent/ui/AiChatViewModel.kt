@@ -248,23 +248,7 @@ class AiChatViewModel(
       val currentMessage = ChatMessage(Role.USER, fullText, attachments)
       // Copy prior turns before adding the current turn. Every fallback attempt
       // receives the same transcript and cannot duplicate the user's message.
-      val priorMessages = conversationHistory.toList().map { previous ->
-        if (previous.attachments.isEmpty()) {
-          previous
-        } else {
-          val supported = previous.attachments.filter {
-            CapabilityGate.missingCapability(caps, it) == null
-          }
-          val omitted = previous.attachments - supported.toSet()
-          previous.copy(
-            text = if (omitted.isEmpty()) previous.text else {
-              previous.text + "\n\n[Anexos anteriores omitidos para este modelo: " +
-                omitted.joinToString(", ") { it.displayName } + "]"
-            },
-            attachments = supported
-          )
-        }
-      }
+      val priorMessages = conversationHistory.toList()
       conversationHistory.add(currentMessage)
 
       _uiState.update { current ->
@@ -294,6 +278,24 @@ class AiChatViewModel(
         var terminalFailure: String? = null
         val tried = mutableSetOf(config.configId)
         while (true) {
+          val targetCaps = AiChatV2Capabilities.resolve(targetPlugin, targetConfig)
+          val historyForTarget = priorMessages.map { previous ->
+            if (previous.attachments.isEmpty()) {
+              previous
+            } else {
+              val supported = previous.attachments.filter {
+                CapabilityGate.missingCapability(targetCaps, it) == null
+              }
+              val omitted = previous.attachments - supported.toSet()
+              previous.copy(
+                text = if (omitted.isEmpty()) previous.text else {
+                  previous.text + "\n\n[Anexos anteriores omitidos para este modelo: " +
+                    omitted.joinToString(", ") { it.displayName } + "]"
+                },
+                attachments = supported
+              )
+            }
+          }
           val engine = AiAgent.newEngine(
             targetPlugin, targetConfig, projectRoot, state.mode,
             permissions = permissions
@@ -303,7 +305,7 @@ class AiChatViewModel(
           val streamedReply = StringBuilder()
           var completedReply: String? = null
           try {
-            engine.run(currentMessage, priorMessages).collect { event ->
+            engine.run(currentMessage, historyForTarget).collect { event ->
               when (event) {
                 is AgentEvent.AssistantDelta -> streamedReply.append(event.text)
                 is AgentEvent.Completed -> completedReply = event.summary
