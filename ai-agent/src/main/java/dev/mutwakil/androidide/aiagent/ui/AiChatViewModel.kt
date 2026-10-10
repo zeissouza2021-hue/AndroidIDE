@@ -155,7 +155,9 @@ class AiChatViewModel(
   fun setActiveConfig(configId: String) {
     if (_uiState.value.isBusy) return
     val (plugin, config) = AiChatV2Providers.resolveConfig(configId) ?: return
-    AiAgent.configStore().setActiveConfigId(config.configId)
+    // A seleção feita nesta janela é local à sessão. O provider global salvo
+    // em ProviderConfigStore continua servindo apenas como padrão para novas
+    // janelas; mudar o modelo aqui não deve alterar as outras conversas abertas.
     _uiState.update { it.copy(activeProvider = plugin, activeConfigId = config.configId) }
     refreshCapabilities()
   }
