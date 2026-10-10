@@ -207,6 +207,6 @@ internal class AiWindowPersistence(context: Context) {
 
     private companion object {
         const val PREFS_NAME = "aiagent_window_state_v1"
-        const val MAX_PERSISTED_TURNS = 40
+        const val MAX_PERSISTED_MESSAGES = 40
     }
 }
