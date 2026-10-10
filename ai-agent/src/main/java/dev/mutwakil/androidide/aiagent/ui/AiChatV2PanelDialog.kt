@@ -112,7 +112,8 @@ class AiChatV2PanelDialog : DialogFragment() {
             ?: AiChatFragment.newInstance(
                 projectPath,
                 args.getString(ARG_FILE_PATH),
-                args.getString(ARG_SELECTION)
+                args.getString(ARG_SELECTION),
+                stableWindowId()
             ).also { frag ->
                 childFragmentManager.beginTransaction()
                     .replace(R.id.ai_chat_v2_fragment_container, frag, TAG_CHAT)
