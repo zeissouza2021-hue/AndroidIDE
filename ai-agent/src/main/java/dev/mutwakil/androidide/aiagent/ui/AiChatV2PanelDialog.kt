@@ -278,10 +278,9 @@ class AiChatV2PanelDialog : DialogFragment() {
         val density = dm.density
         val minVisible = (72 * density).toInt()
         val titleH = if (titleBar.height > 0) titleBar.height else (96 * density).toInt()
-        winX = x.coerceIn(-(winW - minVisible), dm.widthPixels - minVisible)
-        winY = y.coerceIn(0, (dm.heightPixels - titleH).coerceAtLeast(0))
         if (isMaximized) {
-            // Arrastar uma janela maximizada a restaura (comportamento desktop).
+            // Restore dimensions before clamping the new position; clamping
+            // against the full-screen width used to leave the window off-screen.
             isMaximized = false
             savedRect?.let { r ->
                 winW = r.width()
@@ -289,6 +288,8 @@ class AiChatV2PanelDialog : DialogFragment() {
             }
             updateMaximizeIcon()
         }
+        winX = x.coerceIn(-(winW - minVisible), dm.widthPixels - minVisible)
+        winY = y.coerceIn(0, (dm.heightPixels - titleH).coerceAtLeast(0))
         applyGeometry()
     }
 
@@ -348,6 +349,7 @@ class AiChatV2PanelDialog : DialogFragment() {
             override fun onTouch(v: View, event: MotionEvent): Boolean {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        if (isMaximized) toggleMaximize()
                         startRawX = event.rawX
                         startRawY = event.rawY
                         startW = winW
