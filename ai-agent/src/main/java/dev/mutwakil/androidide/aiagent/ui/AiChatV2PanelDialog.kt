@@ -208,8 +208,12 @@ class AiChatV2PanelDialog : DialogFragment() {
             // verticalmente, com margem da borda da tela.
             val density = dm.density
             winW = minOf((dm.widthPixels * 0.85f).toInt(), (560 * density).toInt())
+            // In landscape/split-screen the available display height can
+            // be smaller than the normal minimum window height. Keep the
+            // initial bounds ordered so coerceIn cannot throw on small screens.
+            val initialMinHeight = minOf((360 * density).toInt(), dm.heightPixels)
             winH = (dm.heightPixels * 0.68f).toInt()
-                .coerceIn((360 * density).toInt(), dm.heightPixels)
+                .coerceIn(initialMinHeight, dm.heightPixels.coerceAtLeast(initialMinHeight))
             winX = dm.widthPixels - winW - (12 * density).toInt()
             winY = ((dm.heightPixels - winH) / 2).coerceAtLeast(0)
         }
