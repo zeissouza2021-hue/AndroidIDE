@@ -149,8 +149,9 @@ class AiChatViewModel(
     }
     if (!windowId.isNullOrBlank()) {
       conversationHistory.addAll(
-        runCatching { windowPersistence?.loadConversation(windowId).orEmpty() }
-          .getOrDefault(emptyList())
+        runCatching {
+          windowId?.let { id -> windowPersistence?.loadConversation(id).orEmpty() }.orEmpty()
+        }.getOrDefault(emptyList())
       )
       val restoredMessages = conversationHistory.mapNotNull { turn ->
         when (turn.message.role) {
