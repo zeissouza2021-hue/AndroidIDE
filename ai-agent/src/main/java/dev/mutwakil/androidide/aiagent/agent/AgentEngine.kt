@@ -105,7 +105,13 @@ class AgentEngine(
      * O fluxo termina com [AgentEvent.Completed], [AgentEvent.Failed] ou
      * [AgentEvent.Cancelled].
      */
-    fun run(userMessage: ChatMessage): Flow<AgentEvent> = channelFlow {
+    fun run(
+        userMessage: ChatMessage,
+        priorMessages: List<ChatMessage> = emptyList()
+    ): Flow<AgentEvent> = channelFlow {
+        val safePriorMessages = priorMessages.filter {
+            it.role == Role.USER || it.role == Role.ASSISTANT
+        }
         val toolCtx = ToolContext(
             projectRoot = projectRoot,
             buildBridge = buildBridge,
@@ -117,8 +123,8 @@ class AgentEngine(
         try {
             send(AgentEvent.Status("Analyzing project..."))
             when (mode) {
-                AgentMode.CHAT -> runChat(userMessage, toolCtx)
-                AgentMode.AGENT -> runAgent(userMessage, toolCtx)
+                AgentMode.CHAT -> runChat(userMessage, safePriorMessages, toolCtx)
+                AgentMode.AGENT -> runAgent(userMessage, safePriorMessages, toolCtx)
             }
         } catch (e: CancellationException) {
             trySend(AgentEvent.Cancelled)
@@ -133,15 +139,17 @@ class AgentEngine(
 
     private suspend fun ProducerScope<AgentEvent>.runChat(
         userMessage: ChatMessage,
+        priorMessages: List<ChatMessage>,
         toolCtx: ToolContext
     ) {
         val systemPrompt = buildSystemPrompt(emptyList())
+        val requestMessages = priorMessages + userMessage
         send(AgentEvent.Status("Thinking..."))
         val full = StringBuilder()
         var streamed = false
         try {
             plugin.streamChat(
-                ChatRequest(listOf(userMessage), systemPrompt = systemPrompt),
+                ChatRequest(requestMessages, systemPrompt = systemPrompt),
                 config
             ).collect { chunk ->
                 ensureNotCancelled(toolCtx)
@@ -158,7 +166,7 @@ class AgentEngine(
             if (!streamed) {
                 ensureNotCancelled(toolCtx)
                 val response = plugin.chat(
-                    ChatRequest(listOf(userMessage), systemPrompt = systemPrompt),
+                    ChatRequest(requestMessages, systemPrompt = systemPrompt),
                     config
                 )
                 full.append(response.text)
@@ -174,6 +182,7 @@ class AgentEngine(
 
     private suspend fun ProducerScope<AgentEvent>.runAgent(
         userMessage: ChatMessage,
+        priorMessages: List<ChatMessage>,
         toolCtx: ToolContext
     ) {
         // Tools filtradas pelas capabilities honestas do provider.
@@ -191,7 +200,7 @@ class AgentEngine(
             // Provider sem tool-calling: degrada para resposta direta, sem fingir.
             send(AgentEvent.Status("Provider sem tool-calling; respondendo sem ferramentas."))
             val response = plugin.chat(
-                ChatRequest(listOf(userMessage), systemPrompt = systemPrompt),
+                ChatRequest(priorMessages + userMessage, systemPrompt = systemPrompt),
                 config
             )
             send(AgentEvent.Completed(response.text))
@@ -208,7 +217,7 @@ class AgentEngine(
             emptyList()
         }
 
-        val conversation = mutableListOf(userMessage)
+        val conversation = (priorMessages + userMessage).toMutableList()
         val modified = mutableSetOf<String>()
         val actions = mutableListOf<String>()
         var lastText = ""

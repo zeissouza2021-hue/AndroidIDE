@@ -98,7 +98,8 @@ data class ChatUiState(
  */
 class AiChatViewModel(
   application: Application,
-  projectPath: String?
+  projectPath: String?,
+  private val windowId: String? = null
 ) : AndroidViewModel(application) {
 
   private val projectRoot: File =
@@ -108,6 +109,7 @@ class AiChatViewModel(
   val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
   private val permissions = PermissionManager()
+  private val windowPersistence = windowId?.let { AiWindowPersistence(application) }
 
   /**
    * Set by the Fragment. Must show a confirmation dialog on the main thread and
@@ -117,6 +119,9 @@ class AiChatViewModel(
 
   private var currentEngine: AgentEngine? = null
   private var currentJob: Job? = null
+
+  /** Conversation transcript owned by this ViewModel/window, not the global provider store. */
+  private val conversationHistory = mutableListOf<AiPersistedTurn>()
 
   /** Pending diff reviews: card id -> decision the engine is suspended on. */
   private val diffDecisions = mutableMapOf<String, CompletableDeferred<EditReviewDecision>>()
@@ -136,7 +141,43 @@ class AiChatViewModel(
         activeConfigId = initial?.second?.configId
       )
     }
+    val persistedMode = windowId?.let { id ->
+      runCatching { windowPersistence?.loadMode(id) }.getOrNull()
+    }
+    if (persistedMode != null) {
+      _uiState.update { it.copy(mode = persistedMode) }
+    }
+    if (!windowId.isNullOrBlank()) {
+      conversationHistory.addAll(
+        runCatching {
+          windowId?.let { id -> windowPersistence?.loadConversation(id).orEmpty() }.orEmpty()
+        }.getOrDefault(emptyList())
+      )
+      val restoredMessages = conversationHistory.mapNotNull { turn ->
+        when (turn.message.role) {
+          Role.USER -> ChatListItem.User(turn.displayText, turn.message.attachments)
+          Role.ASSISTANT -> ChatListItem.Assistant(turn.displayText, isStreaming = false)
+          else -> null
+        }
+      }
+      if (restoredMessages.isNotEmpty()) {
+        _uiState.update { it.copy(messages = restoredMessages) }
+      }
+    }
     refreshCapabilities()
+  }
+
+  private fun persistConversation() {
+    val id = windowId ?: return
+    runCatching {
+      windowPersistence?.saveConversation(id, conversationHistory)
+    }
+  }
+
+  private fun trimConversationHistory() {
+    while (conversationHistory.size > MAX_HISTORY_MESSAGES) {
+      conversationHistory.removeAt(0)
+    }
   }
 
   /**
@@ -155,7 +196,9 @@ class AiChatViewModel(
   fun setActiveConfig(configId: String) {
     if (_uiState.value.isBusy) return
     val (plugin, config) = AiChatV2Providers.resolveConfig(configId) ?: return
-    AiAgent.configStore().setActiveConfigId(config.configId)
+    // A seleção feita nesta janela é local à sessão. O provider global salvo
+    // em ProviderConfigStore continua servindo apenas como padrão para novas
+    // janelas; mudar o modelo aqui não deve alterar as outras conversas abertas.
     _uiState.update { it.copy(activeProvider = plugin, activeConfigId = config.configId) }
     refreshCapabilities()
   }
@@ -185,6 +228,9 @@ class AiChatViewModel(
   fun setMode(mode: AgentMode) {
     if (_uiState.value.isBusy) return
     _uiState.update { it.copy(mode = mode) }
+    windowId?.let { id ->
+      runCatching { windowPersistence?.saveMode(id, mode) }
+    }
   }
 
   fun addPendingAttachment(attachment: Attachment) {
@@ -240,6 +286,12 @@ class AiChatViewModel(
       // prefixados ao texto que o modelo vê — e depois limpos.
       val chips = _uiState.value.chips
       val fullText = AiChatV2Context.formatContextBlock(chips) + trimmed
+      val currentMessage = ChatMessage(Role.USER, fullText, attachments)
+      // Copy prior turns before adding the current turn. Every fallback attempt
+      // receives the same transcript and cannot duplicate the user's message.
+      val priorMessages = conversationHistory.takeLast(MAX_HISTORY_MESSAGES).map { it.message }
+      conversationHistory.add(AiPersistedTurn(currentMessage, trimmed))
+      persistConversation()
 
       _uiState.update { current ->
         val withUser = current.copy(
@@ -264,16 +316,43 @@ class AiChatViewModel(
       try {
         var targetPlugin = plugin
         var targetConfig = config
+        var successfulReply: String? = null
+        var terminalFailure: String? = null
         val tried = mutableSetOf(config.configId)
         while (true) {
+          val targetCaps = AiChatV2Capabilities.resolve(targetPlugin, targetConfig)
+          val historyForTarget = priorMessages.map { previous ->
+            if (previous.attachments.isEmpty()) {
+              previous
+            } else {
+              val supported = previous.attachments.filter {
+                CapabilityGate.missingCapability(targetCaps, it) == null
+              }
+              val omitted = previous.attachments - supported.toSet()
+              previous.copy(
+                text = if (omitted.isEmpty()) previous.text else {
+                  previous.text + "\n\n[Anexos anteriores omitidos para este modelo: " +
+                    omitted.joinToString(", ") { it.displayName } + "]"
+                },
+                attachments = supported
+              )
+            }
+          }
           val engine = AiAgent.newEngine(
             targetPlugin, targetConfig, projectRoot, state.mode,
             permissions = permissions
           )
           currentEngine = engine
           var failure: AgentEvent.Failed? = null
+          val streamedReply = StringBuilder()
+          var completedReply: String? = null
           try {
-            engine.run(ChatMessage(Role.USER, fullText, attachments)).collect { event ->
+            engine.run(currentMessage, historyForTarget).collect { event ->
+              when (event) {
+                is AgentEvent.AssistantDelta -> streamedReply.append(event.text)
+                is AgentEvent.Completed -> completedReply = event.summary
+                else -> Unit
+              }
               if (event is AgentEvent.Failed) failure = event else handleEvent(event)
             }
           } catch (e: CancellationException) {
@@ -286,13 +365,26 @@ class AiChatViewModel(
             currentEngine = null
           }
 
-          val failed = failure ?: break
+          val failed = failure
+          if (failed == null) {
+            successfulReply = completedReply ?: streamedReply.toString()
+            break
+          }
           val reason = AiChatV2Fallback.classify(failed.error)
           val next = reason?.let {
             AiChatV2Fallback.candidates(AiAgent.configStore(), targetConfig.configId)
-              .firstOrNull { candidate -> candidate.config.configId !in tried }
+              .firstOrNull { candidate ->
+                candidate.config.configId !in tried &&
+                  attachments.all { attachment ->
+                    CapabilityGate.missingCapability(
+                      AiChatV2Capabilities.resolve(candidate.plugin, candidate.config),
+                      attachment
+                    ) == null
+                  }
+              }
           }
           if (next == null) {
+            terminalFailure = failed.error
             handleEvent(failed)
             break
           }
@@ -314,6 +406,21 @@ class AiChatViewModel(
             it.copy(activeProvider = next.plugin, activeConfigId = next.config.configId)
           }
           refreshCapabilities()
+        }
+        if (successfulReply != null) {
+          val reply = successfulReply.orEmpty()
+          conversationHistory.add(
+            AiPersistedTurn(ChatMessage(Role.ASSISTANT, reply), reply)
+          )
+          trimConversationHistory()
+          persistConversation()
+        } else if (terminalFailure != null) {
+          val errorReply = "A execução falhou: " + terminalFailure.orEmpty()
+          conversationHistory.add(
+            AiPersistedTurn(ChatMessage(Role.ASSISTANT, errorReply), errorReply)
+          )
+          trimConversationHistory()
+          persistConversation()
         }
       } finally {
         currentEngine = null
@@ -486,7 +593,12 @@ class AiChatViewModel(
       is AgentEvent.ToolFinished -> markToolFinished(event.name, event.ok)
       is AgentEvent.Completed -> {
         finalizeStreaming()
-        if (event.summary.isNotBlank()) appendItem(ChatListItem.Status(event.summary))
+        // In CHAT mode the streamed assistant bubble already contains the
+        // complete response. Repeating it as a status row duplicated every
+        // answer and polluted the transcript sent on later turns.
+        if (_uiState.value.mode == AgentMode.AGENT && event.summary.isNotBlank()) {
+          appendItem(ChatListItem.Status(event.summary))
+        }
       }
       is AgentEvent.Failed -> {
         finalizeStreaming()
@@ -565,19 +677,23 @@ class AiChatViewModel(
 
     /** Linhas de log lidas para o chip "anexar erro". */
     const val MAX_ERROR_LINES: Int = 120
+
+    /** Limite de turnos usados como contexto e persistidos por janela. */
+    private const val MAX_HISTORY_MESSAGES: Int = 40
   }
 }
 
 /** Factory that supplies the [Application] and optional project path to [AiChatViewModel]. */
 class AiChatViewModelFactory(
   private val application: Application,
-  private val projectPath: String?
+  private val projectPath: String?,
+  private val windowId: String? = null
 ) : ViewModelProvider.Factory {
 
   @Suppress("UNCHECKED_CAST")
   override fun <T : ViewModel> create(modelClass: Class<T>): T {
     if (modelClass.isAssignableFrom(AiChatViewModel::class.java)) {
-      return AiChatViewModel(application, projectPath) as T
+      return AiChatViewModel(application, projectPath, windowId) as T
     }
     throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
   }

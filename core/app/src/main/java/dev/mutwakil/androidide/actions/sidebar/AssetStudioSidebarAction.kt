@@ -19,13 +19,12 @@ package dev.mutwakil.androidide.actions.sidebar
 
 import android.content.Context
 import android.content.Intent
-import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.core.content.ContextCompat
 import dev.mutwakil.androidide.R
 import dev.mutwakil.androidide.actions.ActionData
 import dev.mutwakil.androidide.actions.requireContext
 import dev.mutwakil.androidide.activities.AssetStudioActivity
-import dev.mutwakil.androidide.fragments.sidebar.AssetStudioFragment
 import kotlin.reflect.KClass
 
 /**
@@ -41,7 +40,9 @@ class AssetStudioSidebarAction(context: Context, override val order: Int) :
   }
 
   override val id: String = ID
-  override val fragmentClass: KClass<out Fragment> = AssetStudioFragment::class
+  // This action opens the standalone activity; a fragment destination would
+  // make the sidebar dispatcher navigate instead of executing execAction.
+  override val fragmentClass: KClass<out Fragment>? = null
 
   init {
     label = context.getString(R.string.asset_studio_title)

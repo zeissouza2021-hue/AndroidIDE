@@ -124,9 +124,10 @@ class AiChatFragment : Fragment() {
     super.onCreate(savedInstanceState)
     val app = requireActivity().application
     val projectPath = arguments?.getString(ARG_PROJECT_PATH)
+    val windowId = arguments?.getString(ARG_WINDOW_ID)
     viewModel = ViewModelProvider(
       this,
-      AiChatViewModelFactory(app, projectPath)
+      AiChatViewModelFactory(app, projectPath, windowId)
     )[AiChatViewModel::class.java]
     voiceController = VoiceInputController(app)
   }
@@ -537,6 +538,7 @@ class AiChatFragment : Fragment() {
     private const val ARG_PROJECT_PATH = "project_path"
     private const val ARG_FILE_PATH = "file_path"
     private const val ARG_SELECTION = "selection"
+    private const val ARG_WINDOW_ID = "window_id"
 
     /** Alpha dos botões de anexo quando o provedor não suporta o tipo. */
     private const val DIMMED_ALPHA = 0.45f
@@ -547,7 +549,7 @@ class AiChatFragment : Fragment() {
     )
 
     fun newInstance(projectPath: String?): AiChatFragment =
-      newInstance(projectPath, null, null)
+      newInstance(projectPath, null, null, null)
 
     /**
      * v2: aceita o caminho do arquivo aberto e a seleção atual como
@@ -558,11 +560,21 @@ class AiChatFragment : Fragment() {
       initialFilePath: String?,
       initialSelection: String?
     ): AiChatFragment =
+      newInstance(projectPath, initialFilePath, initialSelection, null)
+
+    /** Creates a chat fragment scoped to one stable floating-window id. */
+    fun newInstance(
+      projectPath: String?,
+      initialFilePath: String?,
+      initialSelection: String?,
+      windowId: String?
+    ): AiChatFragment =
       AiChatFragment().apply {
         arguments = Bundle().apply {
           putString(ARG_PROJECT_PATH, projectPath)
           putString(ARG_FILE_PATH, initialFilePath)
           putString(ARG_SELECTION, initialSelection)
+          putString(ARG_WINDOW_ID, windowId)
         }
       }
   }

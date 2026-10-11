@@ -38,9 +38,9 @@ import dev.mutwakil.androidide.aiagent.model.ProviderConfig
  *   fallback flag, capability overrides, the set of configured ids and the
  *   active config id) lives in a regular [SharedPreferences] file (`aiagent_prefs`).
  *
- * Legacy note: versions before this change stored `extraHeaders` in the
- * plain prefs file; reads fall back to that key so existing configs are
- * not lost, and the plaintext copy is removed on the next save.
+ * Legacy plaintext headers are migrated into encrypted storage at startup
+ * when encryption is available. If it is unavailable, legacy plaintext
+ * secret values are removed rather than reused or retained in plain prefs.
  *
  * Per-entry keys are namespaced as `provider.<configId>.<field>`.
  * Entries stored before v2 used the provider id as the key; since default
@@ -51,16 +51,15 @@ class ProviderConfigStore(context: Context) {
     private val gson = Gson()
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val secrets: SharedPreferences =
-        createEncryptedPrefs(context.applicationContext)
+    private val secrets: SharedPreferences? =
+        createEncryptedPrefsOrNull(context.applicationContext)
 
     /**
-     * Cria o prefs criptografado. Se o keystore falhar (ex.: corrompido ou
-     * bloqueado no aparelho), cai para um prefs comum em vez de estourar o
-     * construtor — degradado, mas o app continua abrindo. No caminho normal
-     * (keystore íntegro) o comportamento é idêntico ao anterior.
+     * Cria o armazenamento criptografado de segredos. Se o Keystore ou o
+     * armazenamento criptografado falhar, desativa apenas as operações com
+     * credenciais: nunca degrada para SharedPreferences em texto puro.
      */
-    private fun createEncryptedPrefs(context: Context): SharedPreferences {
+    private fun createEncryptedPrefsOrNull(context: Context): SharedPreferences? {
         return try {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -73,15 +72,47 @@ class ProviderConfigStore(context: Context) {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             )
         } catch (e: Exception) {
-            Log.w(TAG, "Keystore indisponível; usando prefs sem criptografia", e)
-            context.getSharedPreferences(ENCRYPTED_PREFS_NAME + "_fallback", Context.MODE_PRIVATE)
+            Log.e(TAG, "Armazenamento seguro indisponível; credenciais desativadas", e)
+            null
         }
+    }
+
+    init {
+        migrateLegacyPlaintextHeaders()
     }
 
     private fun prefix(id: String) = "provider.$id."
 
+    /**
+     * Migrate old extraHeaders values out of ordinary preferences. If secure
+     * storage is unavailable or a migration fails, discard the plaintext
+     * copy rather than silently using it as a credential store.
+     */
+    private fun migrateLegacyPlaintextHeaders() {
+        val legacy = prefs.all.entries.filter { (key, value) ->
+            key.startsWith("provider.") && key.endsWith(".extraHeaders") && value is String
+        }
+        for ((key, value) in legacy) {
+            val secure = secrets
+            val moved = secure != null && runCatching {
+                secure.edit().putString(key, value as String).commit()
+            }.getOrDefault(false)
+            // Always remove the insecure copy, even if secure migration fails.
+            prefs.edit().remove(key).commit()
+            if (!moved) {
+                Log.w(TAG, "Cabeçalhos legados descartados porque não foi possível criptografá-los")
+            }
+        }
+    }
+
     /** Inserts or replaces the configuration entry [config.configId]. */
     fun saveProviderConfig(config: ProviderConfig) {
+        val secureSecrets = secrets
+        if ((!config.apiKey.isNullOrEmpty() || config.extraHeaders.isNotEmpty()) && secureSecrets == null) {
+            throw IllegalStateException(
+                "O armazenamento seguro está indisponível. As credenciais não foram salvas."
+            )
+        }
         val id = config.configId.ifBlank { config.providerId }
         val p = prefix(id)
         prefs.edit()
@@ -105,7 +136,7 @@ class ProviderConfigStore(context: Context) {
         prefs.edit()
             .putStringSet(KEY_PROVIDER_IDS, (listConfiguredIds() + id).toMutableSet())
             .apply()
-        secrets.edit().let { editor ->
+        secureSecrets?.edit()?.let { editor ->
             if (config.apiKey.isNullOrEmpty()) {
                 editor.remove(p + "apiKey")
             } else {
@@ -128,14 +159,11 @@ class ProviderConfigStore(context: Context) {
         return ProviderConfig(
             providerId = prefs.getString(p + "providerId", id) ?: id,
             displayName = prefs.getString(p + "displayName", id) ?: id,
-            apiKey = secrets.getString(p + "apiKey", null),
+            apiKey = secrets?.getString(p + "apiKey", null),
             endpoint = prefs.getString(p + "endpoint", null),
             model = prefs.getString(p + "model", "") ?: "",
-            // Fallback para a chave legada em texto puro (versões antigas).
-            extraHeaders = readExtraHeaders(
-                secrets.getString(p + "extraHeaders", null)
-                    ?: prefs.getString(p + "extraHeaders", null)
-            ),
+            // Segredos só são lidos do armazenamento criptografado.
+            extraHeaders = readExtraHeaders(secrets?.getString(p + "extraHeaders", null)),
             configId = prefs.getString(p + "configId", id) ?: id,
             useAsFallback = prefs.getBoolean(p + "useAsFallback", true),
             capabilityOverrides = readCapabilityOverrides(
@@ -164,7 +192,7 @@ class ProviderConfigStore(context: Context) {
             .remove(p + "isDefault")
             .putStringSet(KEY_PROVIDER_IDS, (listConfiguredIds() - id).toMutableSet())
             .apply()
-        secrets.edit().remove(p + "apiKey").remove(p + "extraHeaders").apply()
+        secrets?.edit()?.remove(p + "apiKey")?.remove(p + "extraHeaders")?.apply()
         if (getActiveConfigId() == id) setActiveConfigId(null)
     }
 

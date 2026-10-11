@@ -212,6 +212,7 @@ class DependencyUpdaterDialog(
     
     private fun updateDependency(dependency: Dependency) {
         try {
+            requireLatestVersion(dependency)
             when {
                 dependency.catalogReference != null -> {
                     updateInVersionCatalog(dependency)
@@ -293,6 +294,7 @@ class DependencyUpdaterDialog(
                 
                 dependencies.forEach { dependency ->
                     try {
+                        requireLatestVersion(dependency)
                         when {
                             dependency.catalogReference != null -> {
                                 updateInVersionCatalog(dependency)
@@ -366,55 +368,158 @@ class DependencyUpdaterDialog(
     }
     
     private fun updateInVersionCatalog(dependency: Dependency) {
-        if (libsVersionsTomlFile == null || !libsVersionsTomlFile.exists()) {
-            throw Exception("libs.versions.toml not found")
+        val catalogFile = libsVersionsTomlFile
+            ?.takeIf { it.isFile }
+            ?: throw IllegalStateException("libs.versions.toml not found")
+        val latestVersion = requireLatestVersion(dependency)
+        val original = catalogFile.readText()
+        val normalizedRef = dependency.catalogReference
+            ?.replace(".", "-")
+            ?: throw IllegalStateException("Missing version-catalog alias")
+
+        // Parse the library declaration by its actual coordinates instead of
+        // assuming a fixed TOML property order or a one-line declaration.
+        val versionRefPattern = Regex(
+            """([a-zA-Z0-9_-]+)\s*=\s*\{\s*group\s*=\s*"([^"]+)"\s*,\s*name\s*=\s*"([^"]+)"\s*,\s*version\.ref\s*=\s*"([^"]+)"""
+        )
+        val versionRefMatch = versionRefPattern.find(original)?.takeIf {
+            it.groupValues[2] == dependency.group && it.groupValues[3] == dependency.name
         }
-        
-        var tomlContent = libsVersionsTomlFile.readText()
-        val normalizedRef = dependency.catalogReference?.replace(".", "-") ?: return
-        
-        val versionRefPattern = """([a-zA-Z0-9\-_]+)\s*=\s*\{\s*group\s*=\s*"${dependency.group}"\s*,\s*name\s*=\s*"${dependency.name}"\s*,\s*version\.ref\s*=\s*"([^"]+)"""".toRegex()
-        val versionRefMatch = versionRefPattern.find(tomlContent)
-        
-        if (versionRefMatch != null) {
-            val versionKey = versionRefMatch.groupValues[2]
-            val versionPattern = """($versionKey\s*=\s*")([^"]+)(")""".toRegex()
-            tomlContent = versionPattern.replace(tomlContent) {
-                "${it.groupValues[1]}${dependency.latestVersion}${it.groupValues[3]}"
+
+        val updated = if (versionRefMatch != null) {
+            val versionKey = versionRefMatch.groupValues[4]
+            val versionPattern = Regex(
+                """(?m)^([ \t]*""" + Regex.escape(versionKey) + """[ \t]*=[ \t]*")([^"]+)(".*)$"""
+            )
+            if (!versionPattern.containsMatchIn(original)) {
+                throw IllegalStateException("Version key '" + versionKey + "' was not found in [versions]")
             }
-            Log.d("DependencyUpdaterDialog", "Updated version key: $versionKey to ${dependency.latestVersion}")
+            val match = versionPattern.find(original)
+                ?: throw IllegalStateException("Version key '" + versionKey + "' was not found in [versions]")
+            original.replaceRange(
+                match.range,
+                match.groupValues[1] + latestVersion + match.groupValues[3]
+            )
         } else {
-            val directPattern = """($normalizedRef\s*=\s*")([^:]+):([^:]+):([^"]+)(")""".toRegex()
-            tomlContent = directPattern.replace(tomlContent) {
-                "${it.groupValues[1]}${it.groupValues[2]}:${it.groupValues[3]}:${dependency.latestVersion}${it.groupValues[5]}"
+            val directPattern = Regex(
+                """(?m)^([ \t]*""" + Regex.escape(normalizedRef) + """[ \t]*=[ \t]*")([^:"]+):([^:"]+):([^"]+)(".*)$"""
+            )
+            if (!directPattern.containsMatchIn(original)) {
+                throw IllegalStateException(
+                    "Could not find catalog entry '" + normalizedRef + "'; no file was changed"
+                )
             }
-            Log.d("DependencyUpdaterDialog", "Updated direct library: $normalizedRef to ${dependency.latestVersion}")
+            val match = directPattern.find(original)
+                ?: throw IllegalStateException(
+                    "Could not find catalog entry '" + normalizedRef + "'; no file was changed"
+                )
+            original.replaceRange(
+                match.range,
+                match.groupValues[1] + match.groupValues[2] + ":" + match.groupValues[3] +
+                    ":" + latestVersion + match.groupValues[5]
+            )
         }
-        
-        libsVersionsTomlFile.writeText(tomlContent)
+
+        writeTextWithBackup(catalogFile, original, updated)
         Log.d("DependencyUpdaterDialog", "Updated libs.versions.toml")
     }
-    
+
     private fun updateVariableInBuildGradle(dependency: Dependency) {
-        var text = buildGradleFile.readText()
-        
-        val varPattern = """(val|var)\s+${dependency.variableReference}\s*=\s*["']([^"']+)["']""".toRegex()
-        text = varPattern.replace(text) { matchResult ->
-            "${matchResult.groupValues[1]} ${dependency.variableReference} = \"${dependency.latestVersion}\""
+        if (!buildGradleFile.isFile) {
+            throw IllegalStateException("Build file not found: " + buildGradleFile.absolutePath)
         }
-        
-        buildGradleFile.writeText(text)
-        Log.d("DependencyUpdaterDialog", "Updated variable ${dependency.variableReference} in build.gradle.kts")
+        val variable = dependency.variableReference
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Missing version variable")
+        val latestVersion = requireLatestVersion(dependency)
+        val original = buildGradleFile.readText()
+        val pattern = Regex(
+            """(?m)^([ \t]*(?:val|var)[ \t]+""" + Regex.escape(variable) + """[ \t]*=[ \t]*["'])([^"']+)(["'])"""
+        )
+        if (!pattern.containsMatchIn(original)) {
+            throw IllegalStateException(
+                "Could not find version variable '" + variable + "'; no file was changed"
+            )
+        }
+        val match = pattern.find(original)
+            ?: throw IllegalStateException(
+                "Could not find version variable '" + variable + "'; no file was changed"
+            )
+        val updated = original.replaceRange(
+            match.range,
+            match.groupValues[1] + latestVersion + match.groupValues[3]
+        )
+        writeTextWithBackup(buildGradleFile, original, updated)
+        Log.d("DependencyUpdaterDialog", "Updated variable " + variable + " in build.gradle")
     }
-    
+
     private fun updateDirectInBuildGradle(dependency: Dependency) {
-        var text = buildGradleFile.readText()
-        
-        val oldPattern = "${dependency.group}:${dependency.name}:${dependency.currentVersion}"
-        val newPattern = "${dependency.group}:${dependency.name}:${dependency.latestVersion}"
-        text = text.replace(oldPattern, newPattern)
-        
-        buildGradleFile.writeText(text)
-        Log.d("DependencyUpdaterDialog", "Updated direct dependency in build.gradle.kts")
+        if (!buildGradleFile.isFile) {
+            throw IllegalStateException("Build file not found: " + buildGradleFile.absolutePath)
+        }
+        val latestVersion = requireLatestVersion(dependency)
+        val original = buildGradleFile.readText()
+        val oldCoordinate = dependency.group + ":" + dependency.name + ":" + dependency.currentVersion
+        if (!original.contains(oldCoordinate)) {
+            throw IllegalStateException(
+                "Could not find dependency '" + oldCoordinate + "'; no file was changed"
+            )
+        }
+        val updated = original.replace(
+            oldCoordinate,
+            dependency.group + ":" + dependency.name + ":" + latestVersion
+        )
+        writeTextWithBackup(buildGradleFile, original, updated)
+        Log.d("DependencyUpdaterDialog", "Updated direct dependency in build.gradle")
+    }
+
+    private fun requireLatestVersion(dependency: Dependency): String {
+        val version = dependency.latestVersion?.trim()
+            ?.takeIf { it.isNotEmpty() && !it.startsWith("Error:", ignoreCase = true) }
+            ?: throw IllegalStateException(
+                "Latest version is unavailable for " + dependency.group + ":" + dependency.name
+            )
+        if (!dependency.hasUpdate || version == dependency.currentVersion) {
+            throw IllegalStateException(
+                "No confirmed version update is available for " + dependency.group + ":" + dependency.name
+            )
+        }
+        return version
+    }
+
+    /**
+     * Writes only changed content, creates a project-local backup first, and
+     * restores the original file if replacing it fails.
+     */
+    private fun writeTextWithBackup(file: File, original: String, updated: String) {
+        if (original == updated) {
+            throw IllegalStateException("The dependency entry was not changed; the file was left untouched")
+        }
+        val parent = file.parentFile
+            ?: throw IllegalStateException("Cannot determine parent directory for " + file.name)
+        val backupDir = File(parent, ".androidide-backups")
+        if (!backupDir.exists() && !backupDir.mkdirs()) {
+            throw IllegalStateException("Could not create backup directory: " + backupDir.absolutePath)
+        }
+        val backup = File(
+            backupDir,
+            file.name + "." + System.currentTimeMillis() + "-" + System.nanoTime() + ".bak"
+        )
+        file.copyTo(backup, overwrite = false)
+        val temporary = File.createTempFile("deps-", ".tmp", parent)
+        try {
+            temporary.writeText(updated)
+            if (!temporary.renameTo(file)) {
+                file.writeText(updated)
+            }
+            if (file.readText() != updated) {
+                throw IllegalStateException("Updated file verification failed")
+            }
+        } catch (e: Exception) {
+            runCatching { backup.copyTo(file, overwrite = true) }
+            throw e
+        } finally {
+            temporary.delete()
+        }
     }
 }
