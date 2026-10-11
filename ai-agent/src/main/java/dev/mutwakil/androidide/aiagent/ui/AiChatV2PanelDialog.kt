@@ -551,7 +551,14 @@ class AiChatV2PanelDialog : DialogFragment() {
         selector.setOnItemClickListener { _, _, position, _ ->
             chatFragment.setActiveConfig(options[position].config.configId)
         }
-        selector.setText(currentLabel(entries), false)
+        // Use this window's selected entry, not the global default: two
+        // floating windows may intentionally use different providers.
+        selector.setText(
+            labelFor(entries.firstOrNull {
+                it.configId == chatFragment.viewModel.uiState.value.activeConfigId
+            }),
+            false
+        )
 
         // Mantém o seletor sincronizado (ex.: troca automática de fallback).
         viewLifecycleOwner.lifecycleScope.launch {
