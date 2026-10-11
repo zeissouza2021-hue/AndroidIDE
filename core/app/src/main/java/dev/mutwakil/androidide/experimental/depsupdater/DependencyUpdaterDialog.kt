@@ -394,9 +394,12 @@ class DependencyUpdaterDialog(
             if (!versionPattern.containsMatchIn(original)) {
                 throw IllegalStateException("Version key '" + versionKey + "' was not found in [versions]")
             }
-            versionPattern.replaceFirst(original) {
-                it.groupValues[1] + latestVersion + it.groupValues[3]
-            }
+            val match = versionPattern.find(original)
+                ?: throw IllegalStateException("Version key '" + versionKey + "' was not found in [versions]")
+            original.replaceRange(
+                match.range,
+                match.groupValues[1] + latestVersion + match.groupValues[3]
+            )
         } else {
             val directPattern = Regex(
                 """(?m)^([ \t]*""" + Regex.escape(normalizedRef) + """[ \t]*=[ \t]*")([^:"]+):([^:"]+):([^"]+)(".*)$"""
@@ -406,10 +409,15 @@ class DependencyUpdaterDialog(
                     "Could not find catalog entry '" + normalizedRef + "'; no file was changed"
                 )
             }
-            directPattern.replaceFirst(original) {
-                it.groupValues[1] + it.groupValues[2] + ":" + it.groupValues[3] +
-                    ":" + latestVersion + it.groupValues[5]
-            }
+            val match = directPattern.find(original)
+                ?: throw IllegalStateException(
+                    "Could not find catalog entry '" + normalizedRef + "'; no file was changed"
+                )
+            original.replaceRange(
+                match.range,
+                match.groupValues[1] + match.groupValues[2] + ":" + match.groupValues[3] +
+                    ":" + latestVersion + match.groupValues[5]
+            )
         }
 
         writeTextWithBackup(catalogFile, original, updated)
@@ -433,9 +441,14 @@ class DependencyUpdaterDialog(
                 "Could not find version variable '" + variable + "'; no file was changed"
             )
         }
-        val updated = pattern.replaceFirst(original) {
-            it.groupValues[1] + latestVersion + it.groupValues[3]
-        }
+        val match = pattern.find(original)
+            ?: throw IllegalStateException(
+                "Could not find version variable '" + variable + "'; no file was changed"
+            )
+        val updated = original.replaceRange(
+            match.range,
+            match.groupValues[1] + latestVersion + match.groupValues[3]
+        )
         writeTextWithBackup(buildGradleFile, original, updated)
         Log.d("DependencyUpdaterDialog", "Updated variable " + variable + " in build.gradle")
     }
